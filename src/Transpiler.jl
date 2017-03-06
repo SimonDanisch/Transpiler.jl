@@ -1,5 +1,6 @@
 module Transpiler
 
-# package code goes here
+include("clike/opengl/compilation.jl")
+include("clike/opencl/compilation.jl")
 
 end # module
