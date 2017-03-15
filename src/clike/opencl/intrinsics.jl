@@ -16,6 +16,9 @@ function glsl_hygiene(sym)
     # TODO unicode
     # TODO figure out what other things are not allowed
     # TODO startswith gl_, but allow variables that are actually valid inbuilds
+    if sym in (:!,)
+        return string(sym)
+    end
     x = string(sym)
     # this seems pretty hacky! #TODO don't just ignore dots!!!!
     # this is only fine right now, because most opengl intrinsics broadcast anyways
