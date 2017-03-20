@@ -7,8 +7,6 @@
 using Sugar, DataStructures
 import Sugar: similar_expr, instance, rewrite_function
 
-const CLMethod = LazyMethod{:GL}
-
 # Functions
 function rewrite_function{F <: Function}(li::CLMethod, f::F, types::ANY, expr)
     expr.args[1] = f
@@ -27,11 +25,20 @@ function rewrite_function{T <: cli.Types}(li::CLMethod, f::Type{T}, types::ANY, 
     expr.args[1] = T
     expr
 end
+# constructors... #TODO refine input types
+function rewrite_function{T <: cli.Numbers}(li::CLMethod, f::typeof(^), types::Tuple{T, T}, expr)
+    expr.args[1] = cli.pow
+    expr
+end
 
 # homogenous tuples, translated to glsl array
 function rewrite_function{N, T, I <: Integer}(
         li::CLMethod, f::typeof(getindex), types::Type{Tuple{NTuple{N, T}, I}}, expr
     )
+    if N == 1 && T <: cli.Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
+        return expr.args[2]
+    end
+
     # todo replace static indices
     idx = expr.args[3]
     idx_expr = if isa(idx, Integer)
@@ -91,6 +98,20 @@ function rewrite_function{V1 <: cli.Vecs, V2 <: cli.Vecs}(
     )
     expr.args[1] = f # substitute constructor
     expr
+end
+
+function rewrite_function{T}(
+        li::CLMethod, f::typeof(convert), types::Type{Tuple{Type{T}, T}}, expr
+    )
+    # drop convert of same type
+    expr.args[3]
+end
+# rewrite intrinsic converts into
+function rewrite_function{T1 <: cli.Types, T2 <: cli.Types}(
+        li::CLMethod, f::typeof(convert), types::Type{Tuple{Type{T1}, T2}}, expr
+    )
+    # drop convert
+    similar_expr(args, args[2:end])
 end
 
 function rewrite_function(li::CLMethod, f::typeof(tuple), types::ANY, expr)

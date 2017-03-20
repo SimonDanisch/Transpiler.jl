@@ -1,47 +1,8 @@
 module CLIntrinsics
+import ..CLTranspiler: AbstractCLIO, EmptyCLIO
+import Sugar: typename
 
-prescripts = Dict(
-    Float32 => "",
-    Float64 => "", # ignore float64 for now
-    Int => "i",
-    Int32 => "i",
-    UInt => "u",
-    Bool => "b"
-)
-immutable CLArray{T, N} end
-
-
-
-function glsl_hygiene(sym)
-    # TODO unicode
-    # TODO figure out what other things are not allowed
-    # TODO startswith gl_, but allow variables that are actually valid inbuilds
-    if sym in (:!,)
-        return string(sym)
-    end
-    x = string(sym)
-    # this seems pretty hacky! #TODO don't just ignore dots!!!!
-    # this is only fine right now, because most opengl intrinsics broadcast anyways
-    # but i'm sure this won't hold in general
-    x = replace(x, ".", "")
-    x = replace(x, "#", "x")
-    x = replace(x, "!", "_bang")
-    if x == "out"
-        x = "_out"
-    end
-    if x == "in"
-        x = "_in"
-    end
-    x
-end
-
-
-
-glsl_sizeof(T) = sizeof(T) * 8
-# for now we disallow Float64 and map it to Float32 -> super hack alert!!!!
-glsl_sizeof(::Type{Float64}) = 32
-glsl_length{T <: Number}(::Type{T}) = 1
-glsl_length(T) = length(T)
+immutable CLArray{T, N} <: AbstractArray{T, N} end
 
 
 # Number types
@@ -61,8 +22,6 @@ const Ints = Union{ints...}
 const Floats = Union{floats...}
 const Numbers = Union{numbers...}
 
-
-
 using StaticArrays
 _vecs = []
 for i = 2:4, T in numbers
@@ -73,6 +32,24 @@ end
 const vecs = (_vecs...)
 const Vecs = Union{vecs...}
 const Types = Union{vecs..., numbers..., CLArray}
+
+
+function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
+    if !(N in (1, 2, 3))
+        # TODO, fake ND arrays with 1D array
+        error("GPUArray can't have more than 3 dimensions for now")
+    end
+    tname = typename(io, T)
+    "__global $tname *"
+end
+function typename{T <: Vecs}(io::AbstractCLIO, t::Type{T})
+    N = if T <: Tuple
+        length(T.parameters)
+    else
+        length(T)
+    end
+    return string('(', typename(io, eltype(T)), N, ')')
+end
 
 @noinline function ret{T}(::Type{T})::T
     unsafe_load(Ptr{T}(C_NULL))
@@ -87,137 +64,10 @@ for i = 2:4
     end
 end
 
-
-
-
-
-
-glsl_name(x) = Symbol(glsl_hygiene(_glsl_name(x)))
-_glsl_name(T::QuoteNode) = _glsl_name(T.value)
-
-function _glsl_name(T)
-    str = if isa(T, Expr) && T.head == :curly
-        string(T, "_", join(T.args, "_"))
-    elseif isa(T, Symbol)
-        string(T)
-    elseif isa(T, Tuple)
-        str = "Tuple_"
-        if !isempty(t.parameters)
-            tstr = map(typename, t.parameters)
-            str *= join(tstr, "_")
-        end
-        str
-    elseif isa(T, Type)
-        str = string(T.name.name)
-        if !isempty(T.parameters)
-            tstr = map(T.parameters) do t
-                if isa(t, DataType)
-                    typename(t)
-                else
-                    string(t)
-                end
-            end
-            str *= string("_", join(tstr, "_"))
-        end
-        str
-    else
-        error("Not transpilable: $T")
-    end
-    return str
-end
-
-function _glsl_name{T, N}(x::Type{CLArray{T, N}})
-    if !(N in (1, 2, 3))
-        # TODO, fake ND arrays with 1D array
-        error("GPUArray can't have more than 3 dimensions for now")
-    end
-    tname = typename(T)
-    "__global $tname *"
-end
-
-
-function _glsl_name{T <: Vecs}(t::Type{T})
-    N = if T <: Tuple
-        length(T.parameters)
-    else
-        length(T)
-    end
-    return string('(', typename(eltype(T)), N, ')')
-end
-function _glsl_name{N, T}(t::Type{NTuple{N, T}})
-    println(t)
-    # Rewrite remaining rewrite ntuples as glsl arrays
-    # e.g. float[3]
-    string(typename(T), '[', N, ']')
-end
-function _glsl_name{N, T}(t::Type{SVector{N, T}})
-    println(t)
-    # Rewrite remaining rewrite ntuples as glsl arrays
-    # e.g. float[3]
-    string(typename(T), '[', N, ']')
-end
-_glsl_name(x::Union{AbstractString, Symbol}) = x
-
-
-
-_glsl_name(::typeof(^)) = "pow"
-if VERSION < v"0.6"
-    _glsl_name(::typeof(.+)) = "+"
-    _glsl_name(::typeof(.-)) = "-"
-    _glsl_name(::typeof(.*)) = "*"
-    _glsl_name(::typeof(./)) = "/"
-end
-
-_glsl_name(x::Type{Void}) = "void"
-_glsl_name(x::Type{Float64}) = "float"
-_glsl_name(x::Type{Float32}) = "float"
-_glsl_name(x::Type{Int}) = "int"
-_glsl_name(x::Type{Int32}) = "int"
-_glsl_name(x::Type{UInt}) = "uint"
-_glsl_name(x::Type{Bool}) = "bool"
-_glsl_name{T}(x::Type{Ptr{T}}) = "$(typename(T)) *"
-
-# TODO this will be annoying on 0.6
-# _glsl_name(x::typeof(cli.:(*))) = "*"
-# _glsl_name(x::typeof(cli.:(<=))) = "lessThanEqual"
-# _glsl_name(x::typeof(cli.:(+))) = "+"
-
-function _glsl_name{F <: Function}(f::Union{F, Type{F}})
-    # Taken from base... #TODO make this more stable
-    _glsl_name(F.name.mt.name)
-end
-
-typename{T}(::Type{T}) = glsl_name(T)
-global operator_replacement
-let _operator_id = 0
-    const operator_replace_dict = Dict{Char, String}()
-    function operator_replacement(char)
-        get!(operator_replace_dict, char) do
-            _operator_id += 1
-            string("op", _operator_id)
-        end
-    end
-end
-
-function typename{T <: Function}(::Type{T})
-    x = string(T)
-    x = replace(x, ".", "_")
-    x = sprint() do io
-        for char in x
-            if Base.isoperator(Symbol(char))
-                print(io, operator_replacement(char))
-            else
-                print(io, char)
-            end
-        end
-    end
-    glsl_name(x)
-end
-
 #typealias for inbuilds
 for i = 2:4, T in numbers
     nvec = NTuple{i, T}
-    name = glsl_name(nvec)
+    name = Symbol(typename(EmptyCLIO(), nvec))
     if !isdefined(name)
         @eval const $name = $nvec
     end
@@ -225,21 +75,22 @@ end
 
 get_global_id(dim::int) = ret(int)
 
-
+pow{T <: Numbers}(a::T, b::T) = ret(T)
 #######################################
 # globals
 const functions = (
-    +, -, *, /, ^, <=, .<=,
-    sin, tan, sqrt, cos, mod, floor
+    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
+    sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
+    abs, pow
 )
 
 const Functions = Union{map(typeof, functions)...}
 
 
-function glintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
-    glintrinsic(f, (T.parameters...))
+function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
+    clintrinsic(f, (T.parameters...))
 end
-function glintrinsic{F <: Function}(f::F, types::Tuple)
+function clintrinsic{F <: Function}(f::F, types::Tuple)
     # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
     if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
         return true
@@ -264,7 +115,7 @@ end # end CLIntrinsics
 using .CLIntrinsics
 
 const cli = CLIntrinsics
-import .cli: glsl_name, typename, image_format, glintrinsic, CLArray
+import .cli: clintrinsic, CLArray
 
 
 ####################################
@@ -281,51 +132,57 @@ end
 
 import Sugar.isintrinsic
 
-function isintrinsic(x::GLMethod)
+is_fixedsize_array(x) = false
+is_fixedsize_array{N, T}(::Type{NTuple{N, T}}) = isleaftype(T)
+function cli.clintrinsic{T}(x::Type{T})
+    T <: cli.Types ||
+    is_fixedsize_array(T)
+end
+function isintrinsic(x::CLMethod)
     if isfunction(x)
         isintrinsic(Sugar.getfunction(x)) ||
-        cli.glintrinsic(x.signature...)
+        cli.clintrinsic(x.signature...)
     else
-        x.signature <: cli.Types
+        cli.clintrinsic(x.signature)
     end
 end
 
 # copied from rewriting. TODO share implementation!
 
 # Make constructors inbuild for now. TODO, only make default constructors inbuild
-function glintrinsic{T}(f::Type{T}, types::ANY)
+function clintrinsic{T}(f::Type{T}, types::ANY)
     return true
 end
 # homogenous tuples, translated to glsl array
-function glintrinsic{N, T, I <: Integer}(
+function clintrinsic{N, T, I <: Integer}(
         f::typeof(getindex), types::Type{Tuple{NTuple{N, T}, I}}
     )
     return true
 end
 
-function glintrinsic{T <: cli.Vecs, I <: cli.int}(
+function clintrinsic{T <: cli.Vecs, I <: cli.int}(
         f::typeof(getindex), types::Type{Tuple{T, I}}
     )
     return true
 end
-function glintrinsic{T <: CLArray, Val, I <: Integer}(
+function clintrinsic{T <: CLArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
     )
     return true
 end
 
 
-function glintrinsic{V1 <: cli.Vecs, V2 <: cli.Vecs}(
+function clintrinsic{V1 <: cli.Vecs, V2 <: cli.Vecs}(
         f::Type{V1}, types::Type{Tuple{V2}}
     )
     return true
 end
-function glintrinsic(f::typeof(tuple), types::ANY)
+function clintrinsic(f::typeof(tuple), types::ANY)
     true
 end
 
 
-function glintrinsic(f::typeof(broadcast), types::ANY)
+function clintrinsic(f::typeof(broadcast), types::ANY)
     tuptypes = (types.parameters...)
     F = tuptypes[1]
     if F <: cli.Functions && all(T-> T <: cli.Types, tuptypes[2:end])
@@ -337,6 +194,6 @@ end
 function Base.getindex{T, N}(a::CLArray{T, N}, id::Integer)
     cli.ret(T)
 end
-function Base.setindex!(a::CLArray, id::Integer)
+function Base.setindex!{T, N}(a::CLArray{T, N}, value::T, id::Integer)
     nothing
 end

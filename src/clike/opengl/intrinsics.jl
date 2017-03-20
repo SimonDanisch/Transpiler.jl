@@ -247,7 +247,7 @@ imageSize{T, N}(x::GLArray{T, N}) = ret(NTuple{N, int})
 const gl_GlobalInvocationID = uvec3((0,0,0))
 const functions = (
     +, -, *, /, ^, <=, .<=,
-    sin, tan, sqrt, cos, mod, floor,
+    sin, tan, sqrt, cos, mod, floor, isinf, isnan,
     imageLoad, imageSize, imageStore
 )
 
