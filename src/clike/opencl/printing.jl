@@ -107,35 +107,16 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
             show_list(io, args, head_, indent, func_prec, true)
         end
 
-    # list (i.e. "(1,2,3)" or "[1,2,3]")
-    elseif haskey(expr_parens, head)               # :tuple/:vcat
-        op, cl = expr_parens[head]
-        if head === :vcat
-            sep = ";"
-        elseif head === :hcat || head === :row
-            sep = " "
-        else
-            sep = ","
-        end
-        head !== :row && print(io, op)
-        show_list(io, args, sep, indent)
-        if (head === :tuple || head === :vcat) && nargs == 1
-            print(io, sep)
-        end
-        head !== :row && print(io, cl)
-
     # function call
     elseif head === :call && nargs >= 1
         f = first(args)
-        fname = Symbol(f)
+        func_args = args[2:end]
+        func_arg_types = map(x->expr_type(io.method, x), func_args)
+        fname = Symbol(functionname(io, f, func_arg_types))
         if fname == :getfield && nargs == 3
             show_unquoted(io, args[2], indent) # type to be accessed
             print(io, '.')
             show_unquoted(io, args[3], indent)
-        # elseif fname == :getindex && nargs == 3
-        #     show_unquoted(io, args[2], indent) # type to be accessed
-        #     print(io, '.')
-        #     show_unquoted(io, args[3], indent)
         else
             # TODO handle getfield
             func_prec = operator_precedence(fname)
@@ -144,7 +125,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
                 func = fname
             end
             func = fname
-            func_args = args[2:end]
+
 
             if (in(ex.args[1], (GlobalRef(Base, :box), :throw)) ||
                 ismodulecall(ex) ||

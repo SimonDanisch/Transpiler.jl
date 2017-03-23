@@ -78,7 +78,6 @@ function ComputeProgram{T}(f::Function, args::T, queue)
         print(io, "__kernel ") # mark as kernel function
         println(io, funcsource)
         kernelsource = String(take!(io.io))
-        println(kernelsource)
         p = cl.build!(cl.Program(ctx, source = kernelsource), raise = false)
         success = true
         for (dev, status) in cl.info(p, :build_status)

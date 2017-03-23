@@ -197,3 +197,8 @@ end
 function Base.setindex!{T, N}(a::CLArray{T, N}, value::T, id::Integer)
     nothing
 end
+
+macro cl_import(func)
+    
+
+end
