@@ -125,13 +125,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
                 func = fname
             end
             func = fname
-
-
-            if (in(ex.args[1], (GlobalRef(Base, :box), :throw)) ||
-                ismodulecall(ex) ||
-                (ex.typ === Any && is_intrinsic_expr(ex.args[1])))
-            end
-
             # scalar multiplication (i.e. "100x")
             if (func === :* &&
                 length(func_args) == 2 && isa(func_args[1], Real) && isa(func_args[2], Symbol))
@@ -225,12 +218,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         print(io, ' ')
         print(io, typename(io, args[1]))
 
-    # var-arg declaration or expansion
-    # (i.e. "function f(L...) end" or "f(B...)")
-    elseif (head === :(...)) && nargs == 1
-        show_unquoted(io, args[1], indent)
-        print(io, "...")
-
     elseif (nargs == 0 && head in (:break, :continue))
         print(io, head)
 
@@ -288,45 +275,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         unsupported_expr(string(ex), line_number)
     end
     nothing
-end
-
-
-
-
-
-const global_identifier = "globalvar_"
-
-function declare_global(io::CLIO, vars)
-    for (i, expr) in enumerate(vars)
-        name, typ = expr.args
-        if typ <: Function # special casing functions
-            print(io, "const ")
-            print(io, typename(typ))
-            print(io, ' ', global_identifier)
-            show_name(io, name)
-            print(io, " = ")
-            show_type(io, typ)
-            println(io, "(false);")
-            continue
-        end
-        qualifiers = String[]
-        bindingloc = typ <: cli.CLArray ? "binding " : "location "
-        if typ <: cli.CLArray
-            push!(qualifiers, image_format(typ))
-        end
-        push!(qualifiers, string(bindingloc, " = ", i - 1))
-
-        print(io, "layout (", join(qualifiers, ", "), ") ")
-        tname = if typ <: cli.CLArray
-            "uniform image2D"
-        else
-            utyp = typ <: GLBuffer ? "in " : "uniform "
-            string(utyp, typename(typ))
-        end
-        print(io, tname, ' ')
-        show_name(io, string(global_identifier, name))
-        println(io, ';')
-    end
 end
 
 
