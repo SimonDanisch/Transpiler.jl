@@ -197,8 +197,14 @@ end
 function Base.setindex!{T, N}(a::CLArray{T, N}, value::T, id::Integer)
     nothing
 end
-
+# TODO Clean up this ugly mess of determining what functions not need to be compiled
+# (called intrinsics here). Best would be a cl_import macro!
+# Problems are, that they either need to define a function stub for Inference
+# or just leave them if already defined in base, but still add the information
+# We can solve this by having two macros. cl_pirate for functions in base
+# and cl_import for new functions
+macro cl_pirate(func)
+end
 macro cl_import(func)
-    
 
 end
