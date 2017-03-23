@@ -1,6 +1,6 @@
 module CLIntrinsics
 import ..CLTranspiler: AbstractCLIO, EmptyCLIO
-import Sugar: typename
+import Sugar: typename, vecname
 
 immutable CLArray{T, N} <: AbstractArray{T, N} end
 
@@ -14,7 +14,7 @@ const int = Int
 const float = Float64
 const uint = UInt
 
-const ints = (int, Int32, uint)
+const ints = (int, Int32, uint, Int64)
 const floats = (Float32, float)
 const numbers = (ints..., floats..., Bool)
 
@@ -42,13 +42,14 @@ function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
     tname = typename(io, T)
     "__global $tname *"
 end
-function typename{T <: Vecs}(io::AbstractCLIO, t::Type{T})
+
+function vecname{T <: Vecs}(io::AbstractCLIO, t::Type{T})
     N = if T <: Tuple
         length(T.parameters)
     else
         length(T)
     end
-    return string('(', typename(io, eltype(T)), N, ')')
+    return string(typename(io, eltype(T)), N)
 end
 
 @noinline function ret{T}(::Type{T})::T
@@ -67,7 +68,7 @@ end
 #typealias for inbuilds
 for i = 2:4, T in numbers
     nvec = NTuple{i, T}
-    name = Symbol(typename(EmptyCLIO(), nvec))
+    name = Symbol(vecname(EmptyCLIO(), nvec))
     if !isdefined(name)
         @eval const $name = $nvec
     end
@@ -85,7 +86,6 @@ const functions = (
 )
 
 const Functions = Union{map(typeof, functions)...}
-
 
 function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     clintrinsic(f, (T.parameters...))

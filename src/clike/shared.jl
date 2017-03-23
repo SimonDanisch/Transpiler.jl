@@ -49,6 +49,8 @@ function typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
     # e.g. float[3]
     if N == 1 && T <: Number
         return typename(io, T)
+    elseif (N in (2, 3, 4, 8)) && T <: Number # TODO look up numbers again!
+        Sugar.vecname(io, t)
     else
         string(typename(io, T), '[', N, ']')
     end

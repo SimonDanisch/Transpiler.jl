@@ -16,8 +16,10 @@ end
 # Constructors
 function rewrite_function{T}(li::CLMethod, f::Type{T}, types::ANY, expr)
     realtype = Sugar.expr_type(li, expr)
-    expr.args[1] = realtype
-    expr
+    # C/Opencl uses curly braces for constructors  
+    ret = Expr(:curly, realtype, expr.args[2:end]...)
+    ret.typ = realtype
+    ret
 end
 
 # constructors... #TODO refine input types
@@ -30,6 +32,27 @@ function rewrite_function{T <: cli.Numbers}(li::CLMethod, f::typeof(^), types::T
     expr.args[1] = cli.pow
     expr
 end
+# homogenous tuples, translated to glsl array
+is_pointer_type(T) = true
+function rewrite_function{T, I <: Integer}(
+        li::CLMethod, f::typeof(getindex), types::Type{Tuple{T, I}}, expr
+    )
+    # todo replace static indices
+    idx = expr.args[3]
+    idx_expr = if isa(idx, Integer)
+        name = Symbol(c_fieldname(T, idx))
+    else
+        # Will need some dynamic field lookup!
+        error("Only static getindex into composed types allowed for now!")
+    end
+    if is_pointer_type(T)
+        ret = Expr(:(->), expr.args[2], idx_expr)
+    else
+        error("Lul, index into $T?")
+    end
+    ret.typ = expr.typ
+    return ret
+end
 
 # homogenous tuples, translated to glsl array
 function rewrite_function{N, T, I <: Integer}(
@@ -38,7 +61,6 @@ function rewrite_function{N, T, I <: Integer}(
     if N == 1 && T <: cli.Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
         return expr.args[2]
     end
-
     # todo replace static indices
     idx = expr.args[3]
     idx_expr = if isa(idx, Integer)

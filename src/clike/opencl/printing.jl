@@ -16,7 +16,7 @@ function Base.show(io::CLIO, x::Float32)
     print(io, Float64(x))
 end
 function Base.show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
-    print(io, Symbol(cli.glsl_hygiene(sym)))
+    print(io, Symbol(symbol_hygiene(io, sym)))
 end
 
 function show_unquoted(io::CLIO, ex::GlobalRef, ::Int, ::Int)
@@ -274,12 +274,8 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         show_block(io, "} else", args[3], indent)
         print(io, "}")
 
-    elseif (head === :let) && nargs >= 1
-        unsupported_expr("let", line_number)
-
     elseif (head === :block) || (head === :body)
         show_block(io, "", ex, indent); print(io, "}")
-
 
     elseif ((head === :&)#= || (head === :$)=#) && length(args) == 1
         print(io, head)
@@ -290,8 +286,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         parens && print(io, ")")
 
 
-    elseif (head === :meta)
-        # TODO, just ignore this? Log this? We definitely don't need it in GLSL
 
     elseif (head === :return)
         if length(args) == 1
@@ -306,6 +300,8 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
             error("What dis return? $ex")
         end
     elseif head == :inbounds # ignore
+    elseif (head === :meta)
+        # TODO, just ignore this? Log this? We definitely don't need it in GLSL
     else
         println(ex)
         unsupported_expr(string(ex), line_number)
@@ -368,14 +364,8 @@ function Sugar.getfuncheader!(x::CLMethod)
                         print(glio, ", ")
                     end
                     name, T = elem.args
-                    if !(T <: cli.Types) && !(T <: Tuple{Number})
-                        print(glio, "__global const ")
-                    end
                     show_type(glio, T)
                     print(glio, ' ')
-                    if !(T <: cli.Types) && !(T <: Tuple{Number})
-                        print(glio, '*')
-                    end
                     show_name(glio, name)
                 end
                 print(glio, ')')
@@ -393,28 +383,31 @@ function Sugar.getfuncsource(x::CLMethod)
         show_unquoted(CLIO(io, x), Sugar.getast!(x), 0, 0)
     end
 end
-
+function c_fieldname(T, i)
+    name = Base.fieldname(T, i)
+    if isa(name, Integer) # for types without fieldnames (Tuple)
+        "field$name"
+    else
+        symbol_hygiene(EmptyCLIO(), name)
+    end
+end
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
     tname = typename(EmptyCLIO(), T)
     sprint() do io
         print(io, "typedef struct {\n")
-        fnames = fieldnames(T)
-        if isempty(fnames) # structs can't be empty
+        nf = nfields(T)
+        fields = []
+        if nf == 0 # structs can't be empty
             # we use bool as a short placeholder type.
             # TODO, are there cases where bool is no good?
-            println(io, "float empty;")
+            println(io, "float empty; // structs can't be empty")
         else
-            for name in fieldnames(T)
-                FT = fieldtype(T, name)
+            for i in 1:nf
+                FT = fieldtype(T, i)
                 print(io, "    ", typename(EmptyCLIO(), FT))
                 print(io, ' ')
-                fieldname = if isa(name, Integer) # for types without fieldnames (Tuple)
-                    "field$name"
-                else
-                    glsl_name(name)
-                end
-                print(io, fieldname)
+                print(io, c_fieldname(T, i))
                 println(io, ';')
             end
         end

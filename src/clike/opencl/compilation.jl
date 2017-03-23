@@ -29,6 +29,9 @@ include("rewriting.jl")
 
 immutable ComputeProgram{Args <: Tuple}
     program::cl.Kernel
+    queue::cl.CmdQueue
+    method::CLMethod
+    source::String
 end
 
 _to_cl_types(::Type{Int32}) = Int32
@@ -47,7 +50,8 @@ end
 
 const compiled_functions = Dict{Any, ComputeProgram}()
 
-function ComputeProgram{T}(f::Function, args::T, ctx; local_size = (16, 16, 1))
+function ComputeProgram{T}(f::Function, args::T, queue)
+    ctx = cl.context(queue)
     gltypes = to_cl_types(args)
     get!(compiled_functions, (f, gltypes)) do # TODO make this faster
         decl = CLMethod((f, gltypes))
@@ -76,19 +80,43 @@ function ComputeProgram{T}(f::Function, args::T, ctx; local_size = (16, 16, 1))
         kernelsource = String(take!(io.io))
         println(kernelsource)
         p = cl.build!(cl.Program(ctx, source = kernelsource), raise = false)
+        success = true
         for (dev, status) in cl.info(p, :build_status)
             if status == cl.CL_BUILD_ERROR
+                println("Couldn't compile: ")
+                println(kernelsource)
                 error(cl.info(p, :build_log)[dev])
             end
         end
-
         fname = string(functionname(io, decl.signature...))
         k = cl.Kernel(p, fname)
-        ComputeProgram{T}(k)
+        ComputeProgram{T}(k, queue, decl, kernelsource)
     end::ComputeProgram{T}
 end
 
+cl_convert(x) = x
+cl_convert(x::Function) = 0f0 # function objects are empty and are only usable for dispatch
+cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch
 
+function (program::ComputeProgram{T}){T}(args::T;
+        global_work_size = nothing,
+        local_work_size = nothing
+    )
+    if global_work_size == nothing
+        for elem in args # search of a opencl buffer
+            if isa(elem, cl.CLArray)
+                global_work_size = size(elem)
+                break
+            end
+        end
+    end
+    args_conv = map(cl_convert, args)
+    program.queue(
+        program.program,
+        global_work_size, local_work_size,
+        args_conv...
+    )
+end
 
 
 end
