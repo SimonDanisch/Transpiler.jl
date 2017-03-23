@@ -126,6 +126,19 @@ function _typename{F <: Function}(io::CIO, f::Type{F})
     string(F)
 end
 
+global signature_hash
+let hash_dict = Dict{Any, Int}(), counter = 0
+    """
+    Returns a unique ID for a type signature, which is as small as possible!
+    """
+    function signature_hash(types)
+        get!(hash_dict, Sugar.to_tuple(types)) do
+            counter += 1
+            counter
+        end
+    end
+end
+
 function functionname(io::CIO, f, types)
     if isa(f, Type)
         return string('(', _typename(io, f), ')')
@@ -135,11 +148,10 @@ function functionname(io::CIO, f, types)
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
     end
-
     str = if supports_overloading(io)
         string(f_sym)
     else
-        string(f_sym, '_', hash(Sugar.to_tuple(types)))
+        string(f_sym, '_', signature_hash(types))
     end
     symbol_hygiene(io, str)
 end
