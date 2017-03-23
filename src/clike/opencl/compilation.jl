@@ -78,15 +78,7 @@ function ComputeProgram{T}(f::Function, args::T, queue)
         print(io, "__kernel ") # mark as kernel function
         println(io, funcsource)
         kernelsource = String(take!(io.io))
-        p = cl.build!(cl.Program(ctx, source = kernelsource), raise = false)
-        success = true
-        for (dev, status) in cl.info(p, :build_status)
-            if status == cl.CL_BUILD_ERROR
-                println("Couldn't compile: ")
-                println(kernelsource)
-                error(cl.info(p, :build_log)[dev])
-            end
-        end
+        p = cl.build!(cl.Program(ctx, source = kernelsource))
         fname = string(functionname(io, decl.signature...))
         k = cl.Kernel(p, fname)
         ComputeProgram{T}(k, queue, decl, kernelsource)
