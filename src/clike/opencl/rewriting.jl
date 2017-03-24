@@ -68,11 +68,21 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
                 end
                 # todo replace static indices
                 idx = expr.args[3]
+                if T <: cli.Vecs
+                    if !isa(idx, Integer)
+                        error("Only static indices are allowed for small vectors!")
+                    end
+                    idxsym = Symbol("s$(idx - 1)")
+                    ret = Expr(:call, getfield, expr.args[2], idxsym)
+                    ret.typ = expr.typ
+                    return ret
+                end
                 idx_expr = if isa(idx, Integer)
                     idx - 1
                 else
                     :($(expr.args[3]) - 1)
                 end
+
                 ret = Expr(:ref, expr.args[2], idx_expr)
                 ret.typ = expr.typ
                 return ret
