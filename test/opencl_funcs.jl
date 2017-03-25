@@ -15,8 +15,8 @@ function mapkernel(f, a, b, c)
     return
 end
 
-a = rand(Float32, 50_000)
-b = rand(Float32, 50_000)
+a = rand(Float32, 1)
+b = rand(Float32, 1)
 device, ctx, queue = cl.create_compute_context()
 a_buff = cl.CLArray(queue, a)
 b_buff = cl.CLArray(queue, b)
@@ -28,8 +28,10 @@ cl_mapkernel = clt.ComputeProgram(mapkernel, args, queue)
 println(cl_mapkernel.source)
 # call kernel. Accepts kw_args for global and local work size!
 # but can also find them out automatically (in a super primitive way)
+using BenchmarkTools
+@benchmark cl_mapkernel((test, a_buff, b_buff, c_buff))
 
-cl_mapkernel((test, a_buff, b_buff, c_buff))
+
 r = cl.to_host(c_buff)
 r2 = test.(a, b)
 if all(isapprox.(r, r2))

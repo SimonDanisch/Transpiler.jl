@@ -40,7 +40,8 @@ function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
         error("GPUArray can't have more than 3 dimensions for now")
     end
     tname = typename(io, T)
-    "__global $tname *"
+    # restrict should be fine for now, since we haven't implemented views yet!
+    "__global $tname * restrict "
 end
 
 function vecname{T <: Vecs}(io::AbstractCLIO, t::Type{T})
@@ -82,7 +83,7 @@ pow{T <: Numbers}(a::T, b::T) = ret(T)
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
     sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
-    abs, pow
+    abs, pow, log10, exp, erf
 )
 
 const Functions = Union{map(typeof, functions)...}

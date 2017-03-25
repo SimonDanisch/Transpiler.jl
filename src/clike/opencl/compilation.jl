@@ -38,15 +38,27 @@ _to_cl_types(::Type{Int32}) = Int32
 _to_cl_types(::Type{Int64}) = Int32
 _to_cl_types(::Type{Float32}) = Float32
 _to_cl_types(::Type{Float64}) = Float32
+_to_cl_types(::Type{Float64}) = Float32
 _to_cl_types{T}(arg::T) = _to_cl_types(T)
-_to_cl_types{T}(::Type{T}) = T
-
-function _to_cl_types{T <: cl.Buffer}(arg::T)
+function _to_cl_types{T <: Union{cl.Buffer, cl.CLArray}}(arg::T)
     return cli.CLArray{eltype(arg), ndims(arg)}
 end
 function to_cl_types(args::Union{Vector, Tuple})
     map(_to_cl_types, args)
 end
+
+_to_cl_types{T}(::Type{T}) = T
+immutable EmptyStruct
+    # Emtpy structs are not supported in OpenCL, which is why we emit a struct
+    # with one floating point field
+    x::Float32
+end
+
+cl_convert(x) = x
+cl_convert(x::Function) = EmptyStruct(0f0) # function objects are empty and are only usable for dispatch
+cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch
+
+
 
 const compiled_functions = Dict{Any, ComputeProgram}()
 
@@ -78,35 +90,59 @@ function ComputeProgram{T}(f::Function, args::T, queue)
         print(io, "__kernel ") # mark as kernel function
         println(io, funcsource)
         kernelsource = String(take!(io.io))
-        p = cl.build!(cl.Program(ctx, source = kernelsource))
+        p = cl.build!(
+            cl.Program(ctx, source = kernelsource),
+            options = "-cl-denorms-are-zero -cl-mad-enable -cl-unsafe-math-optimizations"
+        )
         fname = string(functionname(io, decl.signature...))
         k = cl.Kernel(p, fname)
         ComputeProgram{T}(k, queue, decl, kernelsource)
     end::ComputeProgram{T}
 end
 
-cl_convert(x) = x
-cl_convert(x::Function) = 0f0 # function objects are empty and are only usable for dispatch
-cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch
 
-function (program::ComputeProgram{T}){T}(args::T;
+@generated function (program::ComputeProgram{T}){T}(
+        args::T,
         global_work_size = nothing,
         local_work_size = nothing
     )
-    if global_work_size == nothing
-        for elem in args # search of a opencl buffer
-            if isa(elem, cl.CLArray)
-                global_work_size = size(elem)
-                break
-            end
+    # unrole set_arg! arguments
+    unrolled = Expr(:block)
+    idx = 0
+    args_tuple = Sugar.to_tuple(args)
+    for (i, elem) in enumerate(args_tuple)
+        if elem <: cl.CLArray
+            idx = i
         end
+        push!(unrolled.args, :(cl.set_arg!(k, $i, cl_convert(args[$i]))))
     end
-    args_conv = map(cl_convert, args)
-    program.queue(
-        program.program,
-        global_work_size, local_work_size,
-        args_conv...
-    )
+    work_dim = if global_work_size <: Void
+        if idx != 0
+            :(size(args[$idx]))
+        else
+            error("either supply a global work size, or use a cl.Array to automatically infer global work size")
+        end
+    else
+        :(global_work_size)
+    end
+    quote
+        k = program.program
+        q = program.queue
+        $unrolled
+        ret_event = Ref{cl.CL_event}()
+        gwork = $work_dim
+        gsize = Array{Csize_t}(length(gwork))
+        for (i, s) in enumerate(gwork)
+            gsize[i] = s
+        end
+        # TODO support everything from queue() in a performant manner
+        cl.@check cl.api.clEnqueueNDRangeKernel(
+            q.id, k.id,
+            cl.cl_uint(length(gsize)), C_NULL, gsize, C_NULL,
+            cl.cl_uint(0), C_NULL, ret_event
+        )
+        return cl.Event(ret_event[], retain = false)
+    end
 end
 
 

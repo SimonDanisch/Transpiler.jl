@@ -120,14 +120,12 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         else
             # TODO handle getfield
             func_prec = operator_precedence(fname)
-            # TODO do this correctly
-            if func_prec > 0 || fname in uni_ops
-                func = fname
-            end
-            func = fname
             # scalar multiplication (i.e. "100x")
-            if (func === :* &&
-                length(func_args) == 2 && isa(func_args[1], Real) && isa(func_args[2], Symbol))
+            if (
+                    fname === :* &&
+                    length(func_args) == 2 && isa(func_args[1], Real) &&
+                    isa(func_args[2], Symbol)
+                )
                 if func_prec <= prec
                     show_enclosed_list(io, '(', func_args, "", ')', indent, func_prec)
                 else
@@ -135,8 +133,8 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
                 end
 
             # unary operator (i.e. "!z")
-            elseif isa(func, Symbol) && func in uni_ops && length(func_args) == 1
-                show_unquoted(io, fname, indent)
+            elseif isa(fname, Symbol) && fname in uni_ops && length(func_args) == 1
+                print(io, fname)
                 if isa(func_args[1], Expr) || func_args[1] in all_ops
                     show_enclosed_list(io, '(', func_args, ",", ')', indent, func_prec)
                 else
@@ -146,7 +144,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
             # binary operator (i.e. "x + y")
             elseif func_prec > 0 # is a binary operator
                 na = length(func_args)
-                if (na == 2 || (na > 2 && func in (:+, :++, :*))) && all(!isa(a, Expr) || a.head !== :... for a in func_args)
+                if (na == 2 || (na > 2 && fname in (:+, :++, :*))) && all(!isa(a, Expr) || a.head !== :... for a in func_args)
                     sep = " $f "
                     if func_prec <= prec
                         show_enclosed_list(io, '(', func_args, sep, ')', indent, func_prec, true)
