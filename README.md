@@ -13,6 +13,7 @@ Transpiling is not the optimal way to emit code for e.g. OpenCL or OpenGL, but i
 The better appraoch is [CUDAnative](https://github.com/JuliaGPU/CUDAnative.jl/) and SPIR-V based appraoches for OpenCL and Vulkan.
 Right now it's a nice adhoc solution to get our Julia -> GPU compilation efforts started and the transpilation code is much more appraochable for Julia programmers then diving into the world of LLVM + Julia internals.
 Also, the tools developped for this packages (e.g. [Sugar](https://github.com/SimonDanisch/Sugar.jl) and [Matcha](https://github.com/SimonDanisch/Matcha.jl)) offer a lot of functionality needed for static linting and introspection into Julia's typed AST's.
+Another option is to use Julia itself as a transpilation target and implement macros from a typed AST, allowing to do more powerful transformations.
 
 Example:
 ```Julia
