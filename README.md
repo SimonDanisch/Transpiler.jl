@@ -92,8 +92,15 @@ If you want to run this example, you need to add and checkout the following pack
 ```Julia
 Pkg.clone("https://github.com/SimonDanisch/Matcha.jl.git")
 Pkg.clone("https://github.com/SimonDanisch/Sugar.jl.git")
-Pkg.checkout("Sugar", "sd/refactor")
 Pkg.add("OpenCL")
-Pkg.checkout("OpenCL", "sd/fixes")
+Pkg.checkout("OpenCL")
 Pkg.clone("https://github.com/SimonDanisch/Transpiler.jl.git")
 ```
+
+
+# TODO / Common issues
+
+* compiling constructor code
+* Not sure how to transpile Core._apply 
+* passing around types and constructing them
+* better error handling / logging
