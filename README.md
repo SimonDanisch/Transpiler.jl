@@ -96,3 +96,11 @@ Pkg.add("OpenCL")
 Pkg.checkout("OpenCL")
 Pkg.clone("https://github.com/SimonDanisch/Transpiler.jl.git")
 ```
+
+
+# TODO / Common issues
+
+* compiling constructor code
+* Not sure how to transpile Core._apply 
+* passing around types and constructing them
+* better error handling / logging
