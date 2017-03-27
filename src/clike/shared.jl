@@ -140,7 +140,11 @@ let hash_dict = Dict{Any, Int}(), counter = 0
 end
 
 function functionname(io::CIO, f, types)
-    if isa(f, Type)
+    if isa(f, Type) || isa(f, Expr)
+        # This should only happen, if the function is actually a type
+        if isa(f, Expr)
+            f = f.typ
+        end
         return string('(', _typename(io, f), ')')
     end
     method = LazyMethod(io.method, f, types)

@@ -41,7 +41,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
         if types[1] == Type{types[2]}
             return expr.args[3]
         else # But for now we just change a convert into a constructor call
-            return similar_expr(args, args[2:end])
+            return similar_expr(expr, expr.args[2:end])
         end
     elseif f == setindex! && length(types) == 3 &&
             types[1] <: CLArray && types[3] <: Integer
@@ -114,7 +114,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
             end
         end
     # Base.^ is in OpenCL pow
-    elseif f == (^) && length(args) == 2 && all(t-> t <: cli.Numbers, types)
+    elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = cli.pow
         return expr
     # Constructors
