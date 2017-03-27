@@ -1,5 +1,6 @@
 module CLIntrinsics
 import ..CLTranspiler: AbstractCLIO, EmptyCLIO
+using StaticArrays
 import Sugar: typename, vecname
 
 immutable CLArray{T, N} <: AbstractArray{T, N} end
@@ -22,7 +23,8 @@ const Ints = Union{ints...}
 const Floats = Union{floats...}
 const Numbers = Union{numbers...}
 
-using StaticArrays
+
+
 _vecs = []
 for i = 2:4, T in numbers
     push!(_vecs, NTuple{i, T})
@@ -134,7 +136,7 @@ end
 import Sugar.isintrinsic
 
 is_fixedsize_array(x) = false
-is_fixedsize_array{N, T}(::Type{NTuple{N, T}}) = isleaftype(T)
+is_fixedsize_array{T <: cli.Vecs}(::Type{T}) = true
 function cli.clintrinsic{T}(x::Type{T})
     T <: cli.Types ||
     is_fixedsize_array(T)
@@ -192,12 +194,25 @@ function clintrinsic(f::typeof(broadcast), types::ANY)
     false
 end
 
-function Base.getindex{T, N}(a::CLArray{T, N}, id::Integer)
+function Base.getindex{T, N}(a::CLArray{T, N}, i::Integer)
     cli.ret(T)
 end
-function Base.setindex!{T, N}(a::CLArray{T, N}, value::T, id::Integer)
+function Base.getindex{T}(a::CLArray{T, 2}, i1::Integer, i2::Integer)
+    cli.ret(T)
+end
+function Base.getindex{T}(a::CLArray{T, 3}, i1::Integer, i2::Integer, i3::Integer)
+    cli.ret(T)
+end
+function Base.setindex!{T, N}(a::CLArray{T, N}, value::T, i::Integer)
     nothing
 end
+function Base.setindex!{T}(a::CLArray{T, 2}, value::T, i1::Integer, i2::Integer)
+    nothing
+end
+function Base.setindex!{T}(a::CLArray{T, 3}, value::T, i1::Integer, i2::Integer, i3::Integer)
+    nothing
+end
+
 # TODO Clean up this ugly mess of determining what functions not need to be compiled
 # (called intrinsics here). Best would be a cl_import macro!
 # Problems are, that they either need to define a function stub for Inference

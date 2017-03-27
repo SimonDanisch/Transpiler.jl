@@ -3,12 +3,13 @@
 # Here we rewrite the AST to make it easier to transpile, turning it into an
 # invalid julia AST. The idea is to remove more logick from the actual printing
 # to glsl string
-using Sugar, DataStructures
+using Sugar, DataStructures, StaticArrays
 import Sugar: similar_expr, instance, rewrite_function
 
 is_ntuple(x) = false
 is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
 ntuple_length{N, T}(x::Type{NTuple{N, T}}) = N
+ntuple_length{N, T}(x::Type{SVector{N, T}}) = N
 
 # Functions
 function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
@@ -44,23 +45,24 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
             return similar_expr(expr, expr.args[2:end])
         end
     elseif f == setindex! && length(types) == 3 &&
-            types[1] <: CLArray && types[3] <: Integer
+            types[1] <: CLArray && all(x-> x <: Integer, types[3:end])
 
-        idx = expr.args[4]
-        idx_expr = if isa(idx, Integer)
-            idx - 1
-        else
-            :($(idx) - 1)
+        idxs = expr.args[4:end]
+        idx_expr = map(idxs) do idx
+            if isa(idx, Integer)
+                idx - 1
+            else
+                :($(idx) - 1)
+            end
         end
-        ret = Expr(:(=), Expr(:ref, expr.args[2], idx_expr), expr.args[3])
+        ret = Expr(:(=), Expr(:ref, expr.args[2], idx_expr...), expr.args[3])
         ret.typ = expr.typ
         return ret
-    # homogenous tuples, translated to glsl array
     elseif f == getindex
-        if length(types) == 2 && types[2] <: Integer
-            T, idxT = types
+        if !isempty(types)
+            T = types[1]
             # homogenous tuples, translated to static array
-            if is_ntuple(T)
+            if (length(types) == 2 && types[2] <: Integer) && (is_ntuple(T) || T <: cli.Vecs)
                 N = ntuple_length(T)
                 ET = eltype(T)
                 if N == 1 && ET <: cli.Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
@@ -86,14 +88,16 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
                 ret = Expr(:ref, expr.args[2], idx_expr)
                 ret.typ = expr.typ
                 return ret
-            elseif T <: CLArray
-                idx = expr.args[3]
-                idx_expr = if isa(idx, Integer)
-                    idx - 1
-                else
-                    :($(expr.args[3]) - 1)
+            elseif T <: CLArray && all(x-> x <: Integer, types[2:end])
+                idxs = expr.args[3:end]
+                idx_expr = map(idxs) do idx
+                    if isa(idx, Integer)
+                        idx - 1
+                    else
+                        :($(expr.args[3]) - 1)
+                    end
                 end
-                ret = Expr(:ref, expr.args[2], idx_expr)
+                ret = Expr(:ref, expr.args[2], idx_expr...)
                 ret.typ = expr.typ
                 return ret
             else
@@ -104,10 +108,10 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
                     # Will need some dynamic field lookup!
                     error("Only static getindex into composed types allowed for now!")
                 end
-                if is_pointer_type(T)
+                if false#is_pointer_type(T)
                     ret = Expr(:(->), expr.args[2], idx_expr)
                 else
-                    error("Lul, index into $T?")
+                    error("indexing into $T not implemented")
                 end
                 ret.typ = expr.typ
                 return ret

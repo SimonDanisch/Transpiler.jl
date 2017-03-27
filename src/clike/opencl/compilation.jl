@@ -61,6 +61,11 @@ cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only u
 
 const compiled_functions = Dict{Any, CLFunction}()
 
+function empty_compile_cache!()
+    empty!(compiled_functions)
+    return
+end
+
 function CLFunction{T}(f::Function, args::T, queue)
     ctx = cl.context(queue)
     gltypes = to_cl_types(args)

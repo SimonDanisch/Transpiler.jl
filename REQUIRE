@@ -1,1 +1,6 @@
 julia 0.5
+StaticArrays
+DataStructures
+OpenCL
+#Sugar
+#Matcha
