@@ -4,9 +4,14 @@ import Sugar: supports_overloading, show_type, show_function
 
 abstract CIO <: ASTIO
 
-global replace_unsupported
+global replace_unsupported, empty_replace_cache!
+
 let _unsupported_id = 0
     const unsupported_replace_dict = Dict{Char, String}()
+    function empty_replace_cache!()
+        empty!(unsupported_replace_dict)
+        return
+    end
     """
     Creates a unique replacement for some character
     """
@@ -44,7 +49,10 @@ function symbol_hygiene(io::CIO, sym)
 end
 
 typename(io::CIO, x) = Symbol(symbol_hygiene(io, _typename(io, x)))
-function typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
+
+# don't do hygiene
+typename{N, T}(io::CIO, t::Type{NTuple{N, T}}) = _typename(io, t)
+function _typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
     # Rewrite rewrite ntuples as glsl arrays
     # e.g. float[3]
     if N == 1 && T <: Number
@@ -55,9 +63,16 @@ function typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
         string(typename(io, T), '[', N, ']')
     end
 end
-function typename{N, T}(io::CIO, t::Type{SVector{N, T}})
-    # e.g. float[3]
-    string(typename(io, T), '[', N, ']')
+# don't do hygiene
+typename{N, T}(io::CIO, t::Type{SVector{N, T}}) = _typename(io, t)
+function _typename{N, T}(io::CIO, t::Type{SVector{N, T}})
+    if N == 1 && T <: Number
+        return typename(io, T)
+    elseif (N in (2, 3, 4, 8)) && T <: Number # TODO look up numbers again!
+        Sugar.vecname(io, t)
+    else
+        string(typename(io, T), '[', N, ']')
+    end
 end
 
 _typename(io::CIO, T::QuoteNode) = _typename(io, T.value)
@@ -147,7 +162,11 @@ function functionname(io::CIO, f, types)
         end
         return string('(', _typename(io, f), ')')
     end
-    method = LazyMethod(io.method, f, types)
+    method = try
+        LazyMethod(io.method, f, types)
+    catch e
+        error("Couldn't create function $f with $types")
+    end
     f_sym = Symbol(typeof(f).name.mt.name)
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
