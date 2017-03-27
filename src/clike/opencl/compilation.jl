@@ -27,17 +27,17 @@ include("intrinsics.jl")
 include("printing.jl")
 include("rewriting.jl")
 
-immutable ComputeProgram{Args <: Tuple}
+immutable CLFunction{Args <: Tuple}
     program::cl.Kernel
     queue::cl.CmdQueue
-    method::CLMethod
+    method::Nullable{CLMethod}
     source::String
 end
 
+_to_cl_types{T}(::Type{T}) = T
 _to_cl_types(::Type{Int32}) = Int32
 _to_cl_types(::Type{Int64}) = Int32
 _to_cl_types(::Type{Float32}) = Float32
-_to_cl_types(::Type{Float64}) = Float32
 _to_cl_types(::Type{Float64}) = Float32
 _to_cl_types{T}(arg::T) = _to_cl_types(T)
 function _to_cl_types{T <: Union{cl.Buffer, cl.CLArray}}(arg::T)
@@ -47,22 +47,21 @@ function to_cl_types(args::Union{Vector, Tuple})
     map(_to_cl_types, args)
 end
 
-_to_cl_types{T}(::Type{T}) = T
 immutable EmptyStruct
     # Emtpy structs are not supported in OpenCL, which is why we emit a struct
     # with one floating point field
     x::Float32
 end
 
-cl_convert(x) = x
+cl_convert{T}(x::T) = convert(_to_cl_types(T), x)
 cl_convert(x::Function) = EmptyStruct(0f0) # function objects are empty and are only usable for dispatch
 cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch
 
 
 
-const compiled_functions = Dict{Any, ComputeProgram}()
+const compiled_functions = Dict{Any, CLFunction}()
 
-function ComputeProgram{T}(f::Function, args::T, queue)
+function CLFunction{T}(f::Function, args::T, queue)
     ctx = cl.context(queue)
     gltypes = to_cl_types(args)
     get!(compiled_functions, (f, gltypes)) do # TODO make this faster
@@ -96,12 +95,23 @@ function ComputeProgram{T}(f::Function, args::T, queue)
         )
         fname = string(functionname(io, decl.signature...))
         k = cl.Kernel(p, fname)
-        ComputeProgram{T}(k, queue, decl, kernelsource)
-    end::ComputeProgram{T}
+        CLFunction{T}(k, queue, decl, kernelsource)
+    end::CLFunction{T}
+end
+
+function CLFunction{T}(source_name::Tuple{String, Symbol}, args::T, queue)
+    kernelsource, funcname = source_name
+    ctx = cl.context(queue)
+    p = cl.build!(
+        cl.Program(ctx, source = kernelsource),
+        options = "-cl-denorms-are-zero -cl-mad-enable -cl-unsafe-math-optimizations"
+    )
+    k = cl.Kernel(p, string(funcname))
+    CLFunction{T}(k, queue, Nullable{CLMethod}(), kernelsource)
 end
 
 
-@generated function (program::ComputeProgram{T}){T}(
+@generated function (program::CLFunction{T}){T}(
         args::T,
         global_work_size = nothing,
         local_work_size = nothing

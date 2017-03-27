@@ -42,7 +42,7 @@ b_buff = cl.CLArray(queue, b)
 c_buff = cl.CLArray(queue, similar(a))
 args = (test, a_buff, b_buff, c_buff)
 
-cl_mapkernel = clt.ComputeProgram(mapkernel, args, queue)
+cl_mapkernel = clt.CLFunction(mapkernel, args, queue)
 
 println(cl_mapkernel.source)
 # call kernel. Accepts kw_args for global and local work size!

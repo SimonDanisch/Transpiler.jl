@@ -11,7 +11,7 @@ include("intrinsics.jl")
 include("printing.jl")
 include("rewriting.jl")
 
-immutable ComputeProgram{Args <: Tuple}
+immutable GLFunction{Args <: Tuple}
     program::GLProgram
     local_size::NTuple{3, Int}
 end
@@ -30,9 +30,9 @@ function to_glsl_types(args::Union{Vector, Tuple})
     map(_to_glsl_types, args)
 end
 
-const compiled_functions = Dict{Any, ComputeProgram}()
+const compiled_functions = Dict{Any, GLFunction}()
 
-function ComputeProgram{T}(f::Function, args::T; local_size = (16, 16, 1))
+function GLFunction{T}(f::Function, args::T; local_size = (16, 16, 1))
     gltypes = to_glsl_types(args)
     get!(compiled_functions, (f, gltypes)) do # TODO make this faster
         decl = GLMethod((f, gltypes))
@@ -70,14 +70,14 @@ function ComputeProgram{T}(f::Function, args::T; local_size = (16, 16, 1))
         print(io, "(", join(varnames, ", "), ");\n}")
         shader = GLAbstraction.compile_shader(take!(io.io), GL_COMPUTE_SHADER, Symbol(f))
         program = GLAbstraction.compile_program([shader], [])
-        ComputeProgram{T}(program, local_size)
-    end::ComputeProgram{T}
+        GLFunction{T}(program, local_size)
+    end::GLFunction{T}
 end
 
-useprogram(p::ComputeProgram) = glUseProgram(p.program.id)
+useprogram(p::GLFunction) = glUseProgram(p.program.id)
 
 
-function (p::ComputeProgram{Args}){Args}(args::Args, size::NTuple{3})
+function (p::GLFunction{Args}){Args}(args::Args, size::NTuple{3})
     useprogram(p)
     for i = 1:length(args)
         bindlocation(args[i], i-1)

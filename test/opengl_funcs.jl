@@ -1,7 +1,7 @@
 using Transpiler
 using Transpiler: GLSLTranspiler
 import Transpiler.GLSLTranspiler.gli
-import Transpiler.GLSLTranspiler.ComputeProgram
+import Transpiler.GLSLTranspiler.CLFunction
 import Transpiler.GLSLTranspiler.GlobalInvocationID
 using Sugar, FileIO
 using ModernGL, Reactive, GLFW, StaticArrays
@@ -52,7 +52,7 @@ for elem in Sugar.dependencies!(decl, true)
 end
 deps = Sugar.dependencies!(decl, true)
 
-program = ComputeProgram(broadcast_kernel, (x, test, b, c))
+program = CLFunction(broadcast_kernel, (x, test, b, c))
 args = (b, (1, 1), (1, 1));
 gltypes = Transpiler.GLSLTranspiler.to_glsl_types(args)
 decl = Transpiler.GLSLTranspiler.GLMethod((broadcast_index, gltypes))

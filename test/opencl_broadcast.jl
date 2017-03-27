@@ -2,7 +2,7 @@ using Transpiler
 using OpenCL: cl
 using Transpiler: CLTranspiler
 import Transpiler.CLTranspiler.cli
-import Transpiler.CLTranspiler.ComputeProgram
+import Transpiler.CLTranspiler.CLFunction
 import Transpiler.CLTranspiler.cli.get_global_id
 using Sugar, GeometryTypes, FileIO
 import Sugar: ssavalue_name, ASTIO, get_slottypename, get_type, LazyMethod
@@ -52,6 +52,6 @@ for i = 0:10
 end
 args = (cli.CLArray{Float32, 1}(), test, (length(a_buff),), (Val{true}(), Val{false}()), cli.CLArray{Float32, 1}(), 1f0)
 args2 = (c_buff, test, (Int32(length(c_buff)),), a_buff, b_buff)
-program = ComputeProgram(broadcast_kernel, args2, queue)
+program = CLFunction(broadcast_kernel, args2, queue)
 program(args2)
 x = cl.to_host(c_buff)
