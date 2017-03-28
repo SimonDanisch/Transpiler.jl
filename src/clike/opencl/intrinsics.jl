@@ -137,6 +137,7 @@ import Sugar.isintrinsic
 
 is_fixedsize_array(x) = false
 is_fixedsize_array{T <: cli.Vecs}(::Type{T}) = true
+is_fixedsize_array{T <: cli.Numbers}(::Type{Tuple{T}}) = true
 function cli.clintrinsic{T}(x::Type{T})
     T <: cli.Types ||
     is_fixedsize_array(T)
