@@ -27,6 +27,7 @@ include("intrinsics.jl")
 include("printing.jl")
 include("rewriting.jl")
 
+
 immutable CLFunction{Args <: Tuple}
     program::cl.Kernel
     queue::cl.CmdQueue
@@ -80,6 +81,7 @@ function CLFunction{T}(f::Function, args::T, queue)
         println(io, "// dependant type declarations")
         for typ in types
             if !isintrinsic(typ)
+
                 println(io, getsource!(typ))
             end
         end
