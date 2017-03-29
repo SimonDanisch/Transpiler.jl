@@ -1,21 +1,21 @@
-import Base: indent_width, quoted_syms, uni_ops, expr_infix_wide, expr_infix_any
-import Base: all_ops, expr_calls, expr_parens, ExprNode, show_block
-import Base: show_list, show_enclosed_list, operator_precedence, is_linenumber
-import Base: is_quoted, is_expr, TypedSlot, ismodulecall, is_intrinsic_expr
-import Base: show_generator, show_call, show_unquoted
+import Base: indent_width, uni_ops, expr_infix_wide
+import Base: all_ops, expr_calls, show_block
+import Base: show_list, show_enclosed_list, operator_precedence
+import Base: is_quoted, is_expr, expr_infix_any
+import Base: show_call, show_unquoted, show
 
 
 
 show_linenumber(io::CLIO, line)       = print(io, " // line ", line,':')
 show_linenumber(io::CLIO, line, file) = print(io, " // ", file, ", line ", line, ':')
 
-
+# Functions taken from Julia Base show.jl, and modified to print OpenCL syntax
 
 # don't print f0 TODO this is a Float32 hack
-function Base.show(io::CLIO, x::Float32)
+function show(io::CLIO, x::Float32)
     print(io, Float64(x))
 end
-function Base.show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
+function show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
 end
 
@@ -29,7 +29,7 @@ function show_unquoted(io::CLIO, ex::GlobalRef, ::Int, ::Int)
 end
 
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
-function Base.show_call(io::CLIO, head, func, func_args, indent)
+function show_call(io::CLIO, head, func, func_args, indent)
     op, cl = expr_calls[head]
     if head == :ref
         show_unquoted(io, func, indent)

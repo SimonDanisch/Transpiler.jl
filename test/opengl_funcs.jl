@@ -5,8 +5,9 @@ import Transpiler.GLSLTranspiler.CLFunction
 import Transpiler.GLSLTranspiler.GlobalInvocationID
 using Sugar, FileIO
 using ModernGL, Reactive, GLFW, StaticArrays
-import Sugar: ssavalue_name, ASTIO, get_slottypename, get_type, LazyMethod
+import Sugar: ssavalue_name, ASTIO, LazyMethod
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs
+
 const Vec = SVector
 const Vec3f0 = SVector{3, Float32}
 

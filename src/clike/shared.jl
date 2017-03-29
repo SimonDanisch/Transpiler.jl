@@ -197,19 +197,3 @@ end
 function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)
     show_name(io, slot)
 end
-
-
-# function typename{T <: Function}(io, ::Type{T})
-#     x = string(T)
-#     x = replace(x, ".", "_")
-#     x = sprint() do io
-#         for char in x
-#             if Base.isoperator(Symbol(char))
-#                 print(io, operator_replacement(char))
-#             else
-#                 print(io, char)
-#             end
-#         end
-#     end
-#     glsl_name(x)
-# end

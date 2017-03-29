@@ -4,10 +4,10 @@ import ..Transpiler: CIO, symbol_hygiene
 
 using Sugar, OpenCL
 using OpenCL: cl
-import Sugar: ssavalue_name, ASTIO, get_slottypename, get_type, LazyMethod
+import Sugar: LazyMethod
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic
-import Sugar: isintrinsic, typename, functionname, show_name, show_type, show_function
-import Sugar: supports_overloading, show_function, expr_type
+import Sugar: typename, functionname, show_name, show_type, show_function
+import Sugar: supports_overloading, expr_type
 
 const CLMethod = LazyMethod{:CL}
 

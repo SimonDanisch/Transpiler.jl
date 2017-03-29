@@ -59,15 +59,6 @@ end
     unsafe_load(Ptr{T}(C_NULL))
 end
 
-# intrinsics not defined in Base need a function stub:
-for i = 2:4
-    @eval begin
-        function (::Type{NTuple{$i, T}}){T <: Numbers, N, T2 <: Numbers}(x::NTuple{N, T2})
-            ntuple(i-> T(x[i]), Val{$i})
-        end
-    end
-end
-
 #typealias for inbuilds
 for i = 2:4, T in numbers
     nvec = NTuple{i, T}
