@@ -88,19 +88,15 @@ __kernel void mapkernel_5672850724456951104(__global const _1test *f, __global f
 }
 
 ```
+
 If you want to run this example, you need to add and checkout the following packages:
 ```Julia
-Pkg.clone("https://github.com/SimonDanisch/Matcha.jl.git")
-Pkg.clone("https://github.com/SimonDanisch/Sugar.jl.git")
-Pkg.add("OpenCL")
-Pkg.checkout("OpenCL")
 Pkg.clone("https://github.com/SimonDanisch/Transpiler.jl.git")
 ```
-
 
 # TODO / Common issues
 
 * compiling constructor code
-* Not sure how to transpile Core._apply 
+* Not sure how to transpile Core._apply
 * passing around types and constructing them
 * better error handling / logging
