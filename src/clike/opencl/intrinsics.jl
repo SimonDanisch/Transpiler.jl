@@ -121,18 +121,6 @@ const cli = CLIntrinsics
 import .cli: clintrinsic, CLArray
 
 
-####################################
-# Be a type pirate on 0.5!
-# We shall turn this package into 0.6 only, but 0.6 is broken right now
-# so that's why we need pirating!
-if VERSION < v"0.6"
-    Base.broadcast{N}(f, a::NTuple{N, Any}, b::NTuple{N, Any}) = map(f, a, b)
-    Base.broadcast{N}(f, a::NTuple{N, Any}) = map(f, a)
-    Base.:(.<=){N}(a::NTuple{N, Any}, b::NTuple{N, Any}) = map(<=, a, b)
-    Base.:(.*){N}(a::NTuple{N, Any}, b::NTuple{N, Any}) = map(*, a, b)
-    Base.:(.+){N}(a::NTuple{N, Any}, b::NTuple{N, Any}) = map(+, a, b)
-end
-
 import Sugar.isintrinsic
 
 is_fixedsize_array(x) = false
