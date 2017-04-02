@@ -81,7 +81,6 @@ function CLFunction{T}(f::Function, args::T, queue)
         println(io, "// dependant type declarations")
         for typ in types
             if !isintrinsic(typ)
-
                 println(io, getsource!(typ))
             end
         end

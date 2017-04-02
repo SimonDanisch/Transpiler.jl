@@ -14,6 +14,7 @@ const int = Int
 # same goes for float
 const float = Float64
 const uint = UInt
+const uchar = UInt8
 
 const ints = (int, Int32, uint, Int64)
 const floats = (Float32, float)
@@ -119,7 +120,8 @@ is_fixedsize_array{T <: cli.Vecs}(::Type{T}) = true
 is_fixedsize_array{T <: cli.Numbers}(::Type{Tuple{T}}) = true
 function cli.clintrinsic{T}(x::Type{T})
     T <: cli.Types ||
-    is_fixedsize_array(T)
+    is_fixedsize_array(T) ||
+    T <: cli.uchar # uchar in ints makes 0.6 segfault -.-
 end
 function isintrinsic(x::CLMethod)
     if isfunction(x)
@@ -136,6 +138,7 @@ end
 function clintrinsic{T}(f::Type{T}, types::ANY)
     return true
 end
+
 # homogenous tuples, translated to glsl array
 function clintrinsic{N, T, I <: Integer}(
         f::typeof(getindex), types::Type{Tuple{NTuple{N, T}, I}}
