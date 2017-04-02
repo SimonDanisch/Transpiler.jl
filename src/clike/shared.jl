@@ -126,6 +126,7 @@ _typename(io::CIO, x::Type{Float32}) = "float"
 _typename(io::CIO, x::Type{Int}) = "int"
 _typename(io::CIO, x::Type{Int32}) = "int"
 _typename(io::CIO, x::Type{UInt}) = "uint"
+_typename(io::CIO, x::Type{UInt8}) = "uchar"
 _typename(io::CIO, x::Type{Bool}) = "bool"
 _typename{T}(io::CIO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
 

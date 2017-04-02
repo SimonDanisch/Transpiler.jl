@@ -1,3 +1,8 @@
+# This file contains functions taken and modified from Julia Base show.jl
+# license of show.jl:
+# License is MIT: http://julialang.org/license
+
+
 import Base: indent_width, uni_ops, expr_infix_wide
 import Base: all_ops, expr_calls, show_block
 import Base: show_list, show_enclosed_list, operator_precedence
@@ -9,7 +14,6 @@ import Base: show_call, show_unquoted, show
 show_linenumber(io::CLIO, line)       = print(io, " // line ", line,':')
 show_linenumber(io::CLIO, line, file) = print(io, " // ", file, ", line ", line, ':')
 
-# Functions taken from Julia Base show.jl, and modified to print OpenCL syntax
 
 # don't print f0 TODO this is a Float32 hack
 function show(io::CLIO, x::Float32)
