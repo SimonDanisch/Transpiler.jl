@@ -54,10 +54,15 @@ immutable EmptyStruct
     # Emtpy structs are not supported in OpenCL, which is why we emit a struct
     # with one floating point field
     x::Float32
+    EmptyStruct() = new()
 end
 
 cl_convert{T}(x::T) = convert(_to_cl_types(T), x)
-cl_convert(x::Function) = EmptyStruct(0f0) # function objects are empty and are only usable for dispatch
+function cl_convert(x)
+    # empty objects are empty and are only usable for dispatch
+    isbits(x) && sizeof(x) == 0 && nfields(x) == 0 && return EmptyStruct()
+    x
+end
 cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch
 
 
