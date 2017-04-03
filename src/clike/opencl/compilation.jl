@@ -142,7 +142,7 @@ end
         :(global_work_size)
     end
     local_size = if local_work_size <: Void
-        return :(lsize = C_NULL)
+        :(lsize = C_NULL)
     else
         quote
             lsize = Array{Csize_t}(length(gwork))
