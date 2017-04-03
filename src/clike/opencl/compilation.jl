@@ -1,5 +1,7 @@
 module CLTranspiler
 
+using Compat
+
 import ..Transpiler: CIO, symbol_hygiene
 
 using Sugar, OpenCL
