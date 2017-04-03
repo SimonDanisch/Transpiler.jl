@@ -45,7 +45,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
             return similar_expr(expr, expr.args[2:end])
         end
     elseif f == setindex! && length(types) == 3 &&
-            types[1] <: CLArray && all(x-> x <: Integer, types[3:end])
+            types[1] <: DeviceArray && all(x-> x <: Integer, types[3:end])
 
         idxs = expr.args[4:end]
         idx_expr = map(idxs) do idx
@@ -88,7 +88,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
                 ret = Expr(:ref, expr.args[2], idx_expr)
                 ret.typ = expr.typ
                 return ret
-            elseif T <: CLArray && all(x-> x <: Integer, types[2:end])
+        elseif T <: DeviceArray && all(x-> x <: Integer, types[2:end])
                 idxs = expr.args[3:end]
                 idx_expr = map(idxs) do idx
                     if isa(idx, Integer)

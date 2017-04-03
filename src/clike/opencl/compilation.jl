@@ -141,6 +141,16 @@ end
     else
         :(global_work_size)
     end
+    local_size = if local_work_size <: Void
+        return :(lsize = C_NULL)
+    else
+        quote
+            lsize = Array{Csize_t}(length(gwork))
+            for (i, s) in enumerate(local_work_size)
+                lsize[i] = s
+            end
+        end
+    end
     quote
         k = program.program
         q = program.queue
@@ -151,10 +161,11 @@ end
         for (i, s) in enumerate(gwork)
             gsize[i] = s
         end
+        $local_size
         # TODO support everything from queue() in a performant manner
         cl.@check cl.api.clEnqueueNDRangeKernel(
             q.id, k.id,
-            cl.cl_uint(length(gsize)), C_NULL, gsize, C_NULL,
+            cl.cl_uint(length(gsize)), C_NULL, gsize, lsize,
             cl.cl_uint(0), C_NULL, ret_event
         )
         return cl.Event(ret_event[], retain = false)

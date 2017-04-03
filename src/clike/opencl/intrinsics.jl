@@ -4,6 +4,9 @@ using StaticArrays
 import Sugar: typename, vecname
 
 immutable CLArray{T, N} <: AbstractArray{T, N} end
+immutable LocalMemory{T} <: AbstractArray{T, 1} end
+
+const DeviceArray = Union{CLArray, LocalMemory}
 
 
 # Number types
@@ -34,7 +37,7 @@ end
 
 const vecs = (_vecs...)
 const Vecs = Union{vecs...}
-const Types = Union{vecs..., numbers..., CLArray}
+const Types = Union{vecs..., numbers..., CLArray, LocalMemory}
 
 
 function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
@@ -46,6 +49,11 @@ function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
     # restrict should be fine for now, since we haven't implemented views yet!
     "__global $tname * restrict "
 end
+function typename{T}(io::AbstractCLIO, x::Type{LocalMemory{T}})
+    tname = typename(io, T)
+    "__local $tname * "
+end
+
 
 function vecname{T <: Vecs}(io::AbstractCLIO, t::Type{T})
     N = if T <: Tuple
@@ -70,6 +78,11 @@ for i = 2:4, T in numbers
 end
 
 get_global_id(dim::int) = ret(int)
+get_local_id(dim::int) = ret(int)
+get_group_id(dim::int) = ret(int)
+
+const CLK_LOCAL_MEM_FENCE = Cuint(0)
+barrier(::Cuint) = nothing
 
 pow{T <: Numbers}(a::T, b::T) = ret(T)
 #######################################
@@ -90,7 +103,7 @@ function clintrinsic{F <: Function}(f::F, types::Tuple)
     if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
         return true
     end
-    if f == getindex && length(types) == 2 && first(types) <: CLArray && last(types) <: Integer
+    if f == getindex && length(types) == 2 && first(types) <: DeviceArray && last(types) <: Integer
         return true
     end
     m = methods(f)
@@ -110,7 +123,7 @@ end # end CLIntrinsics
 using .CLIntrinsics
 
 const cli = CLIntrinsics
-import .cli: clintrinsic, CLArray
+import .cli: clintrinsic, CLArray, DeviceArray
 
 
 import Sugar.isintrinsic
@@ -151,7 +164,7 @@ function clintrinsic{T <: cli.Vecs, I <: cli.int}(
     )
     return true
 end
-function clintrinsic{T <: CLArray, Val, I <: Integer}(
+function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
     )
     return true
@@ -176,7 +189,9 @@ function clintrinsic(f::typeof(broadcast), types::ANY)
     end
     false
 end
-
+function Base.getindex{T}(a::cli.LocalMemory{T}, i::Integer)
+    cli.ret(T)
+end
 function Base.getindex{T, N}(a::CLArray{T, N}, i::Integer)
     cli.ret(T)
 end
@@ -185,6 +200,9 @@ function Base.getindex{T}(a::CLArray{T, 2}, i1::Integer, i2::Integer)
 end
 function Base.getindex{T}(a::CLArray{T, 3}, i1::Integer, i2::Integer, i3::Integer)
     cli.ret(T)
+end
+function Base.setindex!{T}(::cli.LocalMemory{T}, ::T, ::Integer)
+    nothing
 end
 function Base.setindex!{T, N}(a::CLArray{T, N}, value::T, i::Integer)
     nothing
