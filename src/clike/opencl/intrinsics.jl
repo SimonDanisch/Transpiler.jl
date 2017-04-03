@@ -77,9 +77,13 @@ for i = 2:4, T in numbers
     end
 end
 
+# TODO I think this needs to be UInt, but is annoying to work with!
 get_global_id(dim::int) = ret(int)
 get_local_id(dim::int) = ret(int)
 get_group_id(dim::int) = ret(int)
+get_local_size(dim::int) = ret(int)
+get_global_size(dim::int) = ret(int)
+
 
 const CLK_LOCAL_MEM_FENCE = Cuint(0)
 barrier(::Cuint) = nothing

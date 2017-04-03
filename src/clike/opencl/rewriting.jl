@@ -13,7 +13,10 @@ ntuple_length{N, T}(x::Type{SVector{N, T}}) = N
 
 # Functions
 function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
-    if f == broadcast
+    if f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
+        expr.args[1] = (/)
+        return expr
+    elseif f == broadcast
         BF = types[1]
         if BF <: cli.Functions && all(T-> T <: cli.Types, types[2:end])
             shift!(expr.args) # remove broadcast from call expression
@@ -106,7 +109,10 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
                     name = Symbol(c_fieldname(T, idx))
                 else
                     # Will need some dynamic field lookup!
-                    error("Only static getindex into composed types allowed for now!")
+                    error(
+                        "Only static getindex into composed types allowed for now!
+                        Found: $T with $(types[2:end])"
+                    )
                 end
                 if false#is_pointer_type(T)
                     ret = Expr(:(->), expr.args[2], idx_expr)
