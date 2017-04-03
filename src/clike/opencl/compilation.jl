@@ -57,11 +57,10 @@ immutable EmptyStruct
     EmptyStruct() = new()
 end
 
-cl_convert{T}(x::T) = convert(_to_cl_types(T), x)
-function cl_convert(x)
+function cl_convert{T}(x::T)
     # empty objects are empty and are only usable for dispatch
     isbits(x) && sizeof(x) == 0 && nfields(x) == 0 && return EmptyStruct()
-    x
+    convert(_to_cl_types(T), x)
 end
 
 cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch
