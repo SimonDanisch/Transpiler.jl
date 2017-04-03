@@ -2,7 +2,7 @@ using Sugar
 import Sugar: ASTIO, LazyMethod, typename, functionname, _typename, show_name
 import Sugar: supports_overloading, show_type, show_function
 
-abstract CIO <: ASTIO
+@compat abstract type CIO <: ASTIO end
 
 global replace_unsupported, empty_replace_cache!
 
