@@ -2,6 +2,7 @@ module CLIntrinsics
 import ..CLTranspiler: AbstractCLIO, EmptyCLIO
 using StaticArrays
 import Sugar: typename, vecname
+using SpecialFunctions: erf
 
 immutable CLArray{T, N} <: AbstractArray{T, N} end
 immutable LocalMemory{T} <: AbstractArray{T, 1} end
