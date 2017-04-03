@@ -11,7 +11,7 @@ import Sugar: supports_overloading, expr_type
 
 const CLMethod = LazyMethod{:CL}
 
-abstract AbstractCLIO <: CIO
+@compat abstract type AbstractCLIO <: CIO end
 immutable EmptyCLIO <: AbstractCLIO
 end
 type CLIO{T <: IO} <: AbstractCLIO
