@@ -63,6 +63,7 @@ function cl_convert(x)
     isbits(x) && sizeof(x) == 0 && nfields(x) == 0 && return EmptyStruct()
     x
 end
+
 cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch
 
 
