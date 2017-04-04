@@ -55,27 +55,30 @@ function typename{T}(io::AbstractCLIO, x::Type{LocalMemory{T}})
     "__local $tname * "
 end
 
-
-function vecname{T <: Vecs}(io::AbstractCLIO, t::Type{T})
+function fixed_array_length(T)
     N = if T <: Tuple
         length(T.parameters)
     else
         length(T)
     end
+end
+is_ntuple(x) = false
+is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
+
+function is_fixedsize_array{T}(::Type{T})
+    (T <: SVector || is_ntuple(T)) &&
+    fixed_array_length(T) in vector_lengths &&
+    eltype(T) <: Numbers
+
+end
+
+function vecname{T}(io::AbstractCLIO, t::Type{T})
+    N = fixed_array_length(T)
     return string(typename(io, eltype(T)), N)
 end
 
 @noinline function ret{T}(::Type{T})::T
     unsafe_load(Ptr{T}(C_NULL))
-end
-
-#typealias for inbuilds
-for i in vector_lengths, T in numbers
-    nvec = NTuple{i, T}
-    name = Symbol(vecname(EmptyCLIO(), nvec))
-    if !isdefined(name)
-        @eval const $name = $nvec
-    end
 end
 
 # TODO I think this needs to be UInt, but is annoying to work with!
@@ -133,12 +136,11 @@ import .cli: clintrinsic, CLArray, DeviceArray
 
 import Sugar.isintrinsic
 
-is_fixedsize_array(x) = false
-is_fixedsize_array{T <: cli.Vecs}(::Type{T}) = true
-is_fixedsize_array{T <: cli.Numbers}(::Type{Tuple{T}}) = true
+
 function cli.clintrinsic{T}(x::Type{T})
     T <: cli.Types ||
-    is_fixedsize_array(T) ||
+    cli.is_fixedsize_array(T) ||
+    T <: Tuple{cli.Numbers} ||
     T <: cli.uchar # uchar in ints makes 0.6 segfault -.-
 end
 function isintrinsic(x::CLMethod)
@@ -164,10 +166,10 @@ function clintrinsic{N, T, I <: Integer}(
     return true
 end
 
-function clintrinsic{T <: cli.Vecs, I <: cli.int}(
+function clintrinsic{T, I <: cli.Ints}(
         f::typeof(getindex), types::Type{Tuple{T, I}}
     )
-    return true
+    return is_fixedsize_array(T)
 end
 function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
@@ -175,12 +177,6 @@ function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
     return true
 end
 
-
-function clintrinsic{V1 <: cli.Vecs, V2 <: cli.Vecs}(
-        f::Type{V1}, types::Type{Tuple{V2}}
-    )
-    return true
-end
 function clintrinsic(f::typeof(tuple), types::ANY)
     true
 end
