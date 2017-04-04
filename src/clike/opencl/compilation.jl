@@ -4,7 +4,7 @@ using Compat
 
 import ..Transpiler: CIO, symbol_hygiene
 
-using Sugar, OpenCL
+using Sugar, OpenCL, StaticArrays
 using OpenCL: cl
 import Sugar: LazyMethod
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic
@@ -23,12 +23,9 @@ end
 
 supports_overloading(io::CLIO) = false
 
-
-
 include("intrinsics.jl")
 include("printing.jl")
 include("rewriting.jl")
-
 
 immutable CLFunction{Args <: Tuple}
     program::cl.Kernel
@@ -37,12 +34,12 @@ immutable CLFunction{Args <: Tuple}
     source::String
 end
 
-_to_cl_types{T}(::Type{T}) = T
-_to_cl_types(::Type{Int32}) = Int32
-_to_cl_types(::Type{Int64}) = Int32
-_to_cl_types(::Type{Float32}) = Float32
-_to_cl_types(::Type{Float64}) = Float32
-_to_cl_types{T}(arg::T) = _to_cl_types(T)
+#_to_cl_types{T}(::Type{T}) = T
+_to_cl_types{T}(::T) = T
+_to_cl_types{T}(::Type{T}) = Type{T}
+_to_cl_types(::Int64) = Int32
+_to_cl_types(::Float64) = Float32
+
 function _to_cl_types{T <: Union{cl.Buffer, cl.CLArray}}(arg::T)
     return cli.CLArray{eltype(arg), ndims(arg)}
 end
@@ -60,7 +57,9 @@ end
 function cl_convert{T}(x::T)
     # empty objects are empty and are only usable for dispatch
     isbits(x) && sizeof(x) == 0 && nfields(x) == 0 && return EmptyStruct()
-    convert(_to_cl_types(T), x)
+    # same applies for types
+    isa(x, Type) && return EmptyStruct()
+    convert(_to_cl_types(x), x)
 end
 
 cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only usable for dispatch

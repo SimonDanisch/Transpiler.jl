@@ -1,4 +1,4 @@
-using Sugar
+using Sugar, StaticArrays
 import Sugar: ASTIO, LazyMethod, typename, functionname, _typename, show_name
 import Sugar: supports_overloading, show_type, show_function
 
@@ -57,18 +57,20 @@ function _typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
     # e.g. float[3]
     if N == 1 && T <: Number
         return typename(io, T)
-    elseif (N in (2, 3, 4, 8)) && T <: Number # TODO look up numbers again!
+    elseif (N in vector_lengths) && T <: Number # TODO look up numbers again!
         Sugar.vecname(io, t)
     else
         string(typename(io, T), '[', N, ']')
     end
 end
+
+const vector_lengths = (2, 4, 8, 16)
 # don't do hygiene
 typename{N, T}(io::CIO, t::Type{SVector{N, T}}) = _typename(io, t)
 function _typename{N, T}(io::CIO, t::Type{SVector{N, T}})
     if N == 1 && T <: Number
         return typename(io, T)
-    elseif (N in (2, 3, 4, 8)) && T <: Number # TODO look up numbers again!
+    elseif (N in vector_lengths) && T <: Number
         Sugar.vecname(io, t)
     else
         string(typename(io, T), '[', N, ']')

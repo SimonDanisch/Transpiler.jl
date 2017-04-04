@@ -1,6 +1,6 @@
 module CLIntrinsics
 import ..CLTranspiler: AbstractCLIO, EmptyCLIO
-using StaticArrays
+using StaticArrays, Sugar
 import Sugar: typename, vecname
 using SpecialFunctions: erf
 
@@ -28,10 +28,10 @@ const Ints = Union{ints...}
 const Floats = Union{floats...}
 const Numbers = Union{numbers...}
 
-
+const vector_lengths = (2, 4, 8, 16)
 
 _vecs = []
-for i = 2:4, T in numbers
+for i in vector_lengths, T in numbers
     push!(_vecs, NTuple{i, T})
     push!(_vecs, SVector{i, T})
 end
@@ -55,27 +55,30 @@ function typename{T}(io::AbstractCLIO, x::Type{LocalMemory{T}})
     "__local $tname * "
 end
 
-
-function vecname{T <: Vecs}(io::AbstractCLIO, t::Type{T})
+function fixed_array_length(T)
     N = if T <: Tuple
         length(T.parameters)
     else
         length(T)
     end
+end
+is_ntuple(x) = false
+is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
+
+function is_fixedsize_array{T}(::Type{T})
+    (T <: SVector || is_ntuple(T)) &&
+    fixed_array_length(T) in vector_lengths &&
+    eltype(T) <: Numbers
+
+end
+
+function vecname{T}(io::AbstractCLIO, t::Type{T})
+    N = fixed_array_length(T)
     return string(typename(io, eltype(T)), N)
 end
 
 @noinline function ret{T}(::Type{T})::T
     unsafe_load(Ptr{T}(C_NULL))
-end
-
-#typealias for inbuilds
-for i = 2:4, T in numbers
-    nvec = NTuple{i, T}
-    name = Symbol(vecname(EmptyCLIO(), nvec))
-    if !isdefined(name)
-        @eval const $name = $nvec
-    end
 end
 
 # TODO I think this needs to be UInt, but is annoying to work with!
@@ -101,10 +104,16 @@ const functions = (
 const Functions = Union{map(typeof, functions)...}
 
 function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
-    clintrinsic(f, (T.parameters...))
+    clintrinsic(f, Sugar.to_tuple(types))
 end
 function clintrinsic{F <: Function}(f::F, types::Tuple)
     # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
+    if f == broadcast
+        BF = types[1]
+        if BF <: Functions && all(T-> T <: Types, types[2:end])
+            return true
+        end
+    end
     if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
         return true
     end
@@ -133,12 +142,11 @@ import .cli: clintrinsic, CLArray, DeviceArray
 
 import Sugar.isintrinsic
 
-is_fixedsize_array(x) = false
-is_fixedsize_array{T <: cli.Vecs}(::Type{T}) = true
-is_fixedsize_array{T <: cli.Numbers}(::Type{Tuple{T}}) = true
+
 function cli.clintrinsic{T}(x::Type{T})
     T <: cli.Types ||
-    is_fixedsize_array(T) ||
+    cli.is_fixedsize_array(T) ||
+    T <: Tuple{cli.Numbers} ||
     T <: cli.uchar # uchar in ints makes 0.6 segfault -.-
 end
 function isintrinsic(x::CLMethod)
@@ -164,10 +172,10 @@ function clintrinsic{N, T, I <: Integer}(
     return true
 end
 
-function clintrinsic{T <: cli.Vecs, I <: cli.int}(
+function clintrinsic{T, I <: cli.Ints}(
         f::typeof(getindex), types::Type{Tuple{T, I}}
     )
-    return true
+    return is_fixedsize_array(T)
 end
 function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
@@ -175,25 +183,10 @@ function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
     return true
 end
 
-
-function clintrinsic{V1 <: cli.Vecs, V2 <: cli.Vecs}(
-        f::Type{V1}, types::Type{Tuple{V2}}
-    )
-    return true
-end
-function clintrinsic(f::typeof(tuple), types::ANY)
+function clintrinsic(f::typeof(tuple), types::Tuple)
     true
 end
 
-
-function clintrinsic(f::typeof(broadcast), types::ANY)
-    tuptypes = (types.parameters...)
-    F = tuptypes[1]
-    if F <: cli.Functions && all(T-> T <: cli.Types, tuptypes[2:end])
-        return true
-    end
-    false
-end
 function Base.getindex{T}(a::cli.LocalMemory{T}, i::Integer)
     cli.ret(T)
 end
@@ -217,6 +210,25 @@ function Base.setindex!{T}(a::CLArray{T, 2}, value::T, i1::Integer, i2::Integer)
 end
 function Base.setindex!{T}(a::CLArray{T, 3}, value::T, i1::Integer, i2::Integer, i3::Integer)
     nothing
+end
+
+# TODO overload SIMD.vload, so that code can run seamlessly on the CPU as well.
+for N in cli.vector_lengths
+    fload = Symbol(string("vload", N))
+    fstore = Symbol(string("vstore", N))
+    @eval begin
+        $(fload){T <: cli.Numbers, N}(i::Integer, a::CLArray{T, N}) = cli.ret(SVector{$N, T})
+        function vload{T <: cli.Numbers}(::Type{SVector{$N, T}}, a::CLArray, i::Integer)
+            $(fload)(i - 1, a)
+        end
+        clintrinsic{T <: Tuple}(f::typeof($fload), types::Type{T}) = true
+
+        $(fstore){T <: cli.Numbers, N}(x::SVector{$N, T}, i::Integer, a::CLArray{T, N}) = nothing
+        function vstore{T <: cli.Numbers}(x::SVector{$N, T}, a::CLArray, i::Integer)
+            $(fstore)(x, i - 1, a)
+        end
+        clintrinsic{T <: Tuple}(f::typeof($fstore), types::Type{T}) = true
+    end
 end
 
 # TODO Clean up this ugly mess of determining what functions not need to be compiled
