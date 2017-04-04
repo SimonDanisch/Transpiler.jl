@@ -28,10 +28,10 @@ const Ints = Union{ints...}
 const Floats = Union{floats...}
 const Numbers = Union{numbers...}
 
-
+const vector_lengths = (2, 4, 8, 16)
 
 _vecs = []
-for i = 2:4, T in numbers
+for i in vector_lengths, T in numbers
     push!(_vecs, NTuple{i, T})
     push!(_vecs, SVector{i, T})
 end
@@ -70,7 +70,7 @@ end
 end
 
 #typealias for inbuilds
-for i = 2:4, T in numbers
+for i in vector_lengths, T in numbers
     nvec = NTuple{i, T}
     name = Symbol(vecname(EmptyCLIO(), nvec))
     if !isdefined(name)
@@ -217,6 +217,25 @@ function Base.setindex!{T}(a::CLArray{T, 2}, value::T, i1::Integer, i2::Integer)
 end
 function Base.setindex!{T}(a::CLArray{T, 3}, value::T, i1::Integer, i2::Integer, i3::Integer)
     nothing
+end
+
+# TODO overload SIMD.vload, so that code can run seamlessly on the CPU as well.
+for N in cli.vector_lengths
+    fload = Symbol(string("vload", N))
+    fstore = Symbol(string("vstore", N))
+    @eval begin
+        $(fload){T <: cli.Numbers, N}(i::Integer, a::CLArray{T, N}) = cli.ret(SVector{$N, T})
+        function vload{T <: cli.Numbers}(::Type{SVector{$N, T}}, a::CLArray, i::Integer)
+            $(fload)(i - 1, a)
+        end
+        clintrinsic{T <: Tuple}(f::typeof($fload), types::Type{T}) = true
+
+        $(fstore){T <: cli.Numbers, N}(x::SVector{$N, T}, i::Integer, a::CLArray{T, N}) = nothing
+        function vstore{T <: cli.Numbers}(x::SVector{$N, T}, a::CLArray, i::Integer)
+            $(fstore)(x, i - 1, a)
+        end
+        clintrinsic{T <: Tuple}(f::typeof($fstore), types::Type{T}) = true
+    end
 end
 
 # TODO Clean up this ugly mess of determining what functions not need to be compiled
