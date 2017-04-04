@@ -1,6 +1,6 @@
 module CLIntrinsics
 import ..CLTranspiler: AbstractCLIO, EmptyCLIO
-using StaticArrays
+using StaticArrays, Sugar
 import Sugar: typename, vecname
 using SpecialFunctions: erf
 
@@ -104,10 +104,16 @@ const functions = (
 const Functions = Union{map(typeof, functions)...}
 
 function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
-    clintrinsic(f, (T.parameters...))
+    clintrinsic(f, Sugar.to_tuple(types))
 end
 function clintrinsic{F <: Function}(f::F, types::Tuple)
     # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
+    if f == broadcast
+        BF = types[1]
+        if BF <: Functions && all(T-> T <: Types, types[2:end])
+            return true
+        end
+    end
     if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
         return true
     end
@@ -177,19 +183,10 @@ function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
     return true
 end
 
-function clintrinsic(f::typeof(tuple), types::ANY)
+function clintrinsic(f::typeof(tuple), types::Tuple)
     true
 end
 
-
-function clintrinsic(f::typeof(broadcast), types::ANY)
-    tuptypes = (types.parameters...)
-    F = tuptypes[1]
-    if F <: cli.Functions && all(T-> T <: cli.Types, tuptypes[2:end])
-        return true
-    end
-    false
-end
 function Base.getindex{T}(a::cli.LocalMemory{T}, i::Integer)
     cli.ret(T)
 end
