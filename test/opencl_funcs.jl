@@ -114,3 +114,73 @@ broadcastsource = """void broadcast_kernel_5(__global float * restrict  A, Base1
         @test elem.signature in deps_test
     end
 end
+
+function fortest(x)
+    acc = x
+    for i = 1:5
+        if i == 1
+            acc += x
+        elseif i == 2
+            acc -= x
+        else
+            acc += x * x
+        end
+    end
+    return acc
+end
+decl = Transpiler.CLTranspiler.CLMethod((fortest, (Float32,)))
+ast = Sugar.getast!(decl)
+function typed_expr(head, typ, args...)
+    expr = Expr(head, args...)
+    expr.typ = typ
+    expr
+end
+
+ast_target = []
+push!(ast_target, typed_expr(:(::), Int, :i, Int))
+push!(ast_target, typed_expr(:(::), Int, :xxtempx4, Int))
+push!(ast_target, typed_expr(:(::), Float32, :acc, Float32))
+sloti, slotx, slotacc = if VERSION < v"0.6.0-dev"
+    SlotNumber(5), SlotNumber(2), SlotNumber(3)
+else
+    # slotnumbers seem to have changed.. besides in testing, this shouldn't be a problem!
+    reverse!(ast_target)
+    SlotNumber(3), SlotNumber(2), SlotNumber(5)
+end
+
+push!(ast_target, :($(slotacc) = $(slotx)))
+for_loop = Expr(:for)
+
+push!(for_loop.args, :($(sloti) = 1:5))
+forbody = Expr(:block)
+push!(for_loop.args, forbody)
+# if else
+call = typed_expr(:call, Float32, +, slotacc, slotx)
+firstif = Expr(:if,
+    typed_expr(:call, Bool, ==, sloti, 1),
+    Expr(:block,
+        :($(slotacc) = $call),
+        Expr(:continue)
+    )
+)
+push!(forbody.args, firstif)
+call = typed_expr(:call, Float32, -, slotacc, slotx)
+secondif = Expr(:if,
+    typed_expr(:call, Bool, ==, sloti, 2),
+    Expr(:block,
+        :($(slotacc) = $call),
+        Expr(:continue)
+    )
+)
+push!(forbody.args, secondif)
+call1 = typed_expr(:call, Float32, *, slotx, slotx)
+call = typed_expr(:call, Float32, +, slotacc, call1)
+push!(forbody.args, :($(slotacc) = $call))
+
+push!(ast_target, for_loop)
+push!(ast_target, :(return $(slotacc)))
+target_expr = typed_expr(:block, Float32, ast_target...)
+
+@testset "for + ifelse" begin
+    @test target_expr == ast
+end

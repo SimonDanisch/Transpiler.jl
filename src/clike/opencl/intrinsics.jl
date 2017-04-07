@@ -28,7 +28,7 @@ const Ints = Union{ints...}
 const Floats = Union{floats...}
 const Numbers = Union{numbers...}
 
-const vector_lengths = (2, 4, 8, 16)
+const vector_lengths = (2, 3, 4, 8, 16)
 
 _vecs = []
 for i in vector_lengths, T in numbers

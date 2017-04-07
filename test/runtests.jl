@@ -1,3 +1,4 @@
+Pkg.checkout("Sugar", "sd/for")
 using Transpiler
 using Base.Test
 

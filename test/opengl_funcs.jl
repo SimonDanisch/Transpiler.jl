@@ -88,7 +88,9 @@ function vertexshader(pvm, objectid, vertex)
 end
 
 
-using Colors
+using Colors, Transpiler, StaticArrays
+const Vec = SVector
+const Vec3f0 = Vec{3, Float32}
 
 immutable Light{T}
     position::Vec{3,T}
@@ -128,11 +130,11 @@ function blinnphong{NV, T}(light, L::Vec{NV, T}, N, V, color, shading)
     )
 end
 
-decl = Transpiler.GLSLTranspiler.GLMethod((blinnphong, (
+decl = Transpiler.CLTranspiler.CLMethod((blinnphong, (
     Light{Float32}, Vec3f0, Vec3f0, Vec3f0, Vec3f0, Shading{Float32}
 )))
 
-println(getsource!(decl))
+println(Sugar.getsource!(decl))
 
 
 
@@ -160,3 +162,16 @@ for dep in dependencies!(method)
     println(getsource!(dep))
     end
 end
+
+
+using Colors, Transpiler, StaticArrays
+function test(x)
+    acc = x
+    for i = 1:5
+        acc += x
+    end
+    return acc
+end
+decl = Transpiler.CLTranspiler.CLMethod((test, ( Float32,)))
+println(Sugar.getast!(decl))
+println(Sugar.getsource!(decl))

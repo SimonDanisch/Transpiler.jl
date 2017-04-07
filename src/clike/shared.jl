@@ -64,7 +64,7 @@ function _typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
     end
 end
 
-const vector_lengths = (2, 4, 8, 16)
+const vector_lengths = (2, 3, 4, 8, 16)
 # don't do hygiene
 typename{N, T}(io::CIO, t::Type{SVector{N, T}}) = _typename(io, t)
 function _typename{N, T}(io::CIO, t::Type{SVector{N, T}})

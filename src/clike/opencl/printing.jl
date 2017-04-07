@@ -200,10 +200,28 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         unsupported_expr("Empty function, $(args[1])", line_number)
 
     # block with argument
-    elseif head in (:for, :while, :function, :if) && nargs==2
+    elseif head in (:while, :function, :if) && nargs == 2
         show_block(io, head, args[1], args[2], indent)
         print(io, "}")
-
+    elseif head == :for
+        forheader = args[1]
+        forheader.head == :(=) || error("Unsupported for: $ex")
+        i, range = forheader.args
+        range.head == :(:) || error("Unsupported for: $ex")
+        from, to = range.args
+        print(io, "for(")
+        show_unquoted(io, i)
+        print(io, " = ")
+        show_unquoted(io, from)
+        print(io, "; ")
+        show_unquoted(io, i)
+        print(io, " <= ")
+        show_unquoted(io, to)
+        print(io, "; ")
+        show_unquoted(io, i)
+        print(io, "++)")
+        show_block(io, "", [], args[2], indent)
+        print(io, "}")
     elseif (head == :module) && nargs==3 && isa(args[1],Bool)
         show_block(io, args[1] ? :module : :baremodule, args[2], args[3], indent)
         print(io, "}")
