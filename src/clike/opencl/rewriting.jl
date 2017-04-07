@@ -6,10 +6,6 @@
 using Sugar, DataStructures, StaticArrays
 import Sugar: similar_expr, instance, rewrite_function
 
-is_ntuple(x) = false
-is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
-ntuple_length{N, T}(x::Type{NTuple{N, T}}) = N
-ntuple_length{N, T}(x::Type{SVector{N, T}}) = N
 
 # Functions
 function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
@@ -65,15 +61,15 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
         if !isempty(types)
             T = types[1]
             # homogenous tuples, translated to static array
-            if (length(types) == 2 && types[2] <: Integer) && (is_ntuple(T) || T <: cli.Vecs)
-                N = ntuple_length(T)
+            if (length(types) == 2 && types[2] <: Integer) && (cli.is_ntuple(T) || cli.is_fixedsize_array(T))
+                N = cli.fixed_array_length(T)
                 ET = eltype(T)
                 if N == 1 && ET <: cli.Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
                     return expr.args[2]
                 end
                 # todo replace static indices
                 idx = expr.args[3]
-                if T <: cli.Vecs
+                if cli.is_fixedsize_array(T)
                     if !isa(idx, Integer)
                         error("Only static indices are allowed for small vectors!")
                     end
