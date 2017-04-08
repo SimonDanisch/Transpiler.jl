@@ -4,7 +4,69 @@ import Sugar: supports_overloading, show_type, show_function
 
 @compat abstract type CIO <: ASTIO end
 
+immutable EmptyStruct
+    # Emtpy structs are not supported in OpenCL, which is why we emit a struct
+    # with one floating point field
+    x::Float32
+    EmptyStruct() = new()
+end
+
+@noinline function ret{T}(::Type{T})::T
+    unsafe_load(Ptr{T}(C_NULL))
+end
+# Number types
+# Abstract types
+# for now we use Int, more accurate would be Int32. But to make things simpler
+# we rewrite Int to Int32 implicitely like this!
+const int = Int
+# same goes for float
+const float = Float64
+const uint = UInt
+const uchar = UInt8
+
+const ints = (int, Int32, uint, Int64)
+const floats = (Float32, float)
+const numbers = (ints..., floats..., Bool)
+
+const Ints = Union{ints...}
+const Floats = Union{floats...}
+const Numbers = Union{numbers...}
+
+const vector_lengths = (2, 3, 4, 8, 16)
+_vecs = []
+for i in vector_lengths, T in numbers
+    push!(_vecs, NTuple{i, T})
+    push!(_vecs, SVector{i, T})
+end
+const vecs = (_vecs...)
+const Vecs = Union{vecs...}
+
+pow{T <: Numbers}(a::T, b::T) = ret(T)
+#######################################
+# globals
+const functions = (
+    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
+    sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
+    abs, pow, log10, exp, erf, normalize, dot
+)
+
 global replace_unsupported, empty_replace_cache!
+function fixed_array_length(T)
+    N = if T <: Tuple
+        length(T.parameters)
+    else
+        length(T)
+    end
+end
+is_ntuple(x) = false
+is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
+
+function is_fixedsize_array{T}(::Type{T})
+    (T <: SVector || is_ntuple(T)) &&
+    fixed_array_length(T) in vector_lengths &&
+    eltype(T) <: Numbers
+end
+
 
 let _unsupported_id = 0
     const unsupported_replace_dict = Dict{Char, String}()
@@ -199,4 +261,13 @@ end
 
 function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)
     show_name(io, slot)
+end
+
+function c_fieldname(T, i)
+    name = Base.fieldname(T, i)
+    if isa(name, Integer) # for types without fieldnames (Tuple)
+        "field$name"
+    else
+        symbol_hygiene(EmptyGLIO(), name)
+    end
 end

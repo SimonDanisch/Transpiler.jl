@@ -17,19 +17,19 @@ import Base: show_call, show_unquoted, show
 
 
 
-show_linenumber(io::CLIO, line)       = print(io, " // line ", line,':')
-show_linenumber(io::CLIO, line, file) = print(io, " // ", file, ", line ", line, ':')
+show_linenumber(io::GLIO, line)       = print(io, " // line ", line,':')
+show_linenumber(io::GLIO, line, file) = print(io, " // ", file, ", line ", line, ':')
 
 
 # don't print f0 TODO this is a Float32 hack
-function show(io::CLIO, x::Float32)
+function show(io::GLIO, x::Float32)
     print(io, Float64(x))
 end
-function show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
+function show_unquoted(io::GLIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
 end
 
-function show_unquoted(io::CLIO, ex::GlobalRef, ::Int, ::Int)
+function show_unquoted(io::GLIO, ex::GlobalRef, ::Int, ::Int)
     # TODO Why is Base.x suddenly == GPUArrays.GLBackend.x
     #if ex.mod == GLSLIntrinsics# || ex.mod == GPUArrays.GLBackend
         print(io, ex.name)
@@ -39,7 +39,7 @@ function show_unquoted(io::CLIO, ex::GlobalRef, ::Int, ::Int)
 end
 
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
-function show_call(io::CLIO, head, func, func_args, indent)
+function show_call(io::GLIO, head, func, func_args, indent)
     op, cl = expr_calls[head]
     if head == :ref
         show_unquoted(io, func, indent)
@@ -61,12 +61,12 @@ function show_call(io::CLIO, head, func, func_args, indent)
 end
 
 
-function Base.show_unquoted(io::CLIO, ssa::SSAValue, ::Int, ::Int)
+function Base.show_unquoted(io::GLIO, ssa::SSAValue, ::Int, ::Int)
     print(io, Sugar.ssavalue_name(ssa))
 end
 
 # show a block, e g if/for/etc
-function show_block(io::CLIO, head, args::Vector, body, indent::Int)
+function show_block(io::GLIO, head, args::Vector, body, indent::Int)
     if isempty(args)
         print(io, head, '{')
     else
@@ -86,7 +86,7 @@ function show_block(io::CLIO, head, args::Vector, body, indent::Int)
 end
 
 
-function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
+function show_unquoted(io::GLIO, ex::Expr, indent::Int, prec::Int)
     line_number = 0 # TODO include line numbers
     head, args, nargs = ex.head, ex.args, length(ex.args)
     # dot (i.e. "x.y"), but not compact broadcast exps
@@ -188,17 +188,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
             show_list(io, args, " ", indent, comp_prec)
         end
 
-    # function calls need to transform the function from :call to :calldecl
-    # so that operators are printed correctly
-    elseif head === :function && nargs==2 && is_expr(args[1], :call)
-        # TODO, not sure what this is about
-        show_block(io, head, Expr(:calldecl, args[1].args...), args[2], indent)
-        print(io, "}")
-
-    elseif head === :function && nargs == 1
-        # TODO empty function in GLSL?
-        unsupported_expr("Empty function, $(args[1])", line_number)
-
     # block with argument
     elseif head in (:while, :function, :if) && nargs == 2
         show_block(io, head, args[1], args[2], indent)
@@ -226,15 +215,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         show_block(io, args[1] ? :module : :baremodule, args[2], args[3], indent)
         print(io, "}")
 
-    # type declaration
-    elseif (head == :type) && nargs==3
-        # TODO struct
-        show_block(io, args[1] ? :type : :immutable, args[2], args[3], indent)
-        print(io, "}")
-
-    elseif head == :bitstype && nargs == 2
-        unsupported_expr("bitstype", line_number)
-
     # empty return (i.e. "function f() return end")
     elseif head == :return && nargs == 1 && (args[1] === nothing)
         # ignore empty return
@@ -247,17 +227,12 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
     elseif (nargs == 0 && head in (:break, :continue))
         print(io, head)
 
-    elseif (nargs == 1 && head in (:abstract, :const)) ||
-                          head in (:local,  :global, :export)
-        print(io, head, ' ')
-        show_list(io, args, ", ", indent)
-
     elseif (head === :macrocall) && nargs >= 1
         # Use the functional syntax unless specifically designated with prec=-1
         show_unquoted(io, expand(ex), indent)
 
     elseif (head === :typealias) && nargs == 2
-        print(io, "typealias ")
+        print(io, "typedef ")
         show_list(io, args, ' ', indent)
 
     elseif (head === :line) && 1 <= nargs <= 2
@@ -304,12 +279,12 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
 end
 
 
-function Sugar.getfuncheader!(x::CLMethod)
+function Sugar.getfuncheader!(x::GLMethod)
     if !isdefined(x, :funcheader)
         x.funcheader = if Sugar.isfunction(x)
             sprint() do io
                 args = Sugar.getfuncargs(x)
-                glio = CLIO(io, x)
+                glio = GLIO(io, x)
                 show_type(glio, Sugar.returntype(x))
                 print(glio, ' ')
                 show_function(glio, x.signature...)
@@ -332,18 +307,18 @@ function Sugar.getfuncheader!(x::CLMethod)
     x.funcheader
 end
 
-function Sugar.getfuncsource(x::CLMethod)
+function Sugar.getfuncsource(x::GLMethod)
     # TODO make this lazy as well?
     sprint() do io
-        show_unquoted(CLIO(io, x), Sugar.getast!(x), 0, 0)
+        show_unquoted(GLIO(io, x), Sugar.getast!(x), 0, 0)
     end
 end
 
-function Sugar.gettypesource(x::CLMethod)
+function Sugar.gettypesource(x::GLMethod)
     T = x.signature
-    tname = typename(EmptyCLIO(), T)
+    tname = typename(EmptyGLIO(), T)
     sprint() do io
-        print(io, "typedef struct {\n")
+        print(io, "struct $tname{\n")
         nf = nfields(T)
         fields = []
         if nf == 0 # structs can't be empty
@@ -353,12 +328,37 @@ function Sugar.gettypesource(x::CLMethod)
         else
             for i in 1:nf
                 FT = fieldtype(T, i)
-                print(io, "    ", typename(EmptyCLIO(), FT))
+                print(io, "    ", typename(EmptyGLIO(), FT))
                 print(io, ' ')
                 print(io, c_fieldname(T, i))
                 println(io, ';')
             end
         end
-        println(io, "}$tname;")
+        println(io, "};")
     end
+end
+
+function functionname(io::GLIO, f, types)
+    if isa(f, Type) || isa(f, Expr)
+        # This should only happen, if the function is actually a type
+        if isa(f, Expr)
+            f = f.typ
+        end
+        return _typename(io, f)
+    end
+    method = try
+        LazyMethod(io.method, f, types)
+    catch e
+        error("Couldn't create function $f with $types")
+    end
+    f_sym = Symbol(typeof(f).name.mt.name)
+    if Sugar.isintrinsic(method)
+        return f_sym # intrinsic operators don't need hygiene!
+    end
+    str = if supports_overloading(io)
+        string(f_sym)
+    else
+        string(f_sym, '_', signature_hash(types))
+    end
+    symbol_hygiene(io, str)
 end

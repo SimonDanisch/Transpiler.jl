@@ -1,5 +1,11 @@
 module CLIntrinsics
-import ..CLTranspiler: AbstractCLIO, EmptyCLIO
+
+import ..Transpiler: AbstractCLIO, EmptyCLIO
+import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
+import ..Transpiler: fixed_array_length, is_ntuple, is_fixedsize_array, GLMethod
+import ..Transpiler: AbstractGLIO, ret, vecs, Vecs, vector_lengths, functions
+
+
 using StaticArrays, Sugar
 import Sugar: typename, vecname
 using SpecialFunctions: erf
@@ -7,39 +13,8 @@ using SpecialFunctions: erf
 immutable CLArray{T, N} <: AbstractArray{T, N} end
 immutable LocalMemory{T} <: AbstractArray{T, 1} end
 
-const DeviceArray = Union{CLArray, LocalMemory}
-
-
-# Number types
-# Abstract types
-# for now we use Int, more accurate would be Int32. But to make things simpler
-# we rewrite Int to Int32 implicitely like this!
-const int = Int
-# same goes for float
-const float = Float64
-const uint = UInt
-const uchar = UInt8
-
-const ints = (int, Int32, uint, Int64)
-const floats = (Float32, float)
-const numbers = (ints..., floats..., Bool)
-
-const Ints = Union{ints...}
-const Floats = Union{floats...}
-const Numbers = Union{numbers...}
-
-const vector_lengths = (2, 3, 4, 8, 16)
-
-_vecs = []
-for i in vector_lengths, T in numbers
-    push!(_vecs, NTuple{i, T})
-    push!(_vecs, SVector{i, T})
-end
-
-const vecs = (_vecs...)
-const Vecs = Union{vecs...}
+const CLDeviceArray = Union{CLArray, LocalMemory}
 const Types = Union{vecs..., numbers..., CLArray, LocalMemory}
-
 
 function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
     if !(N in (1, 2, 3))
@@ -55,31 +30,11 @@ function typename{T}(io::AbstractCLIO, x::Type{LocalMemory{T}})
     "__local $tname * "
 end
 
-function fixed_array_length(T)
-    N = if T <: Tuple
-        length(T.parameters)
-    else
-        length(T)
-    end
-end
-is_ntuple(x) = false
-is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
-
-function is_fixedsize_array{T}(::Type{T})
-    (T <: SVector || is_ntuple(T)) &&
-    fixed_array_length(T) in vector_lengths &&
-    eltype(T) <: Numbers
-
-end
-
 function vecname{T}(io::AbstractCLIO, t::Type{T})
     N = fixed_array_length(T)
     return string(typename(io, eltype(T)), N)
 end
 
-@noinline function ret{T}(::Type{T})::T
-    unsafe_load(Ptr{T}(C_NULL))
-end
 
 # TODO I think this needs to be UInt, but is annoying to work with!
 get_global_id(dim::int) = ret(int)
@@ -91,15 +46,8 @@ get_global_size(dim::int) = ret(int)
 
 const CLK_LOCAL_MEM_FENCE = Cuint(0)
 barrier(::Cuint) = nothing
-
-pow{T <: Numbers}(a::T, b::T) = ret(T)
 #######################################
 # globals
-const functions = (
-    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
-    sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
-    abs, pow, log10, exp, erf
-)
 
 const Functions = Union{map(typeof, functions)...}
 
@@ -117,7 +65,7 @@ function clintrinsic{F <: Function}(f::F, types::Tuple)
     if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
         return true
     end
-    if f == getindex && length(types) == 2 && first(types) <: DeviceArray && last(types) <: Integer
+    if f == getindex && length(types) == 2 && first(types) <: CLDeviceArray && last(types) <: Integer
         return true
     end
     m = methods(f)
@@ -137,7 +85,7 @@ end # end CLIntrinsics
 using .CLIntrinsics
 
 const cli = CLIntrinsics
-import .cli: clintrinsic, CLArray, DeviceArray
+import .cli: clintrinsic, CLArray, CLDeviceArray
 
 
 import Sugar.isintrinsic
@@ -177,7 +125,7 @@ function clintrinsic{T, I <: cli.Ints}(
     )
     return is_fixedsize_array(T)
 end
-function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
+function clintrinsic{T <: CLDeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
     )
     return true
@@ -240,5 +188,4 @@ end
 macro cl_pirate(func)
 end
 macro cl_import(func)
-
 end

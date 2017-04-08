@@ -1,8 +1,4 @@
-module CLTranspiler
-
 using Compat
-
-import ..Transpiler: CIO, symbol_hygiene
 
 using Sugar, OpenCL, StaticArrays
 using OpenCL: cl
@@ -47,13 +43,6 @@ function to_cl_types(args::Union{Vector, Tuple})
     map(_to_cl_types, args)
 end
 
-immutable EmptyStruct
-    # Emtpy structs are not supported in OpenCL, which is why we emit a struct
-    # with one floating point field
-    x::Float32
-    EmptyStruct() = new()
-end
-
 function cl_convert{T}(x::T)
     # empty objects are empty and are only usable for dispatch
     isbits(x) && sizeof(x) == 0 && nfields(x) == 0 && return EmptyStruct()
@@ -66,17 +55,17 @@ cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only u
 
 
 
-const compiled_functions = Dict{Any, CLFunction}()
+const cl_compiled_functions = Dict{Any, CLFunction}()
 
-function empty_compile_cache!()
-    empty!(compiled_functions)
+function cl_empty_compile_cache!()
+    empty!(cl_compiled_functions)
     return
 end
 
 function CLFunction{T}(f::Function, args::T, queue)
     ctx = cl.context(queue)
     gltypes = to_cl_types(args)
-    get!(compiled_functions, (f, gltypes)) do # TODO make this faster
+    get!(cl_compiled_functions, (f, gltypes)) do # TODO make this faster
         decl = CLMethod((f, gltypes))
         funcsource = getsource!(decl)
         # add compute program dependant infos
@@ -176,7 +165,4 @@ end
         )
         return cl.Event(ret_event[], retain = false)
     end
-end
-
-
 end

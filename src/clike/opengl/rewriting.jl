@@ -6,15 +6,14 @@
 using Sugar, DataStructures, StaticArrays
 import Sugar: similar_expr, instance, rewrite_function
 
-
 # Functions
-function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
-    if f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
+function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
+    if f == div && length(types) == 2 && all(x-> x <: Ints, types)
         expr.args[1] = (/)
         return expr
     elseif f == broadcast
         BF = types[1]
-        if BF <: cli.Functions && all(T-> T <: cli.Types, types[2:end])
+        if BF <: gli.Functions && all(T-> T <: gli.Types, types[2:end])
             shift!(expr.args) # remove broadcast from call expression
             expr.args[1] = Sugar.resolve_func(li, expr.args[1]) # rewrite if necessary
             return expr
@@ -44,7 +43,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
             return similar_expr(expr, expr.args[2:end])
         end
     elseif f == setindex! && length(types) == 3 &&
-            types[1] <: CLDeviceArray && all(x-> x <: Integer, types[3:end])
+            types[1] <: GLDeviceArray && all(x-> x <: Integer, types[3:end])
 
         idxs = expr.args[4:end]
         idx_expr = map(idxs) do idx
@@ -61,15 +60,15 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
         if !isempty(types)
             T = types[1]
             # homogenous tuples, translated to static array
-            if (length(types) == 2 && types[2] <: Integer) && (cli.is_ntuple(T) || cli.is_fixedsize_array(T))
-                N = cli.fixed_array_length(T)
+            if (length(types) == 2 && types[2] <: Integer) && (is_ntuple(T) || is_fixedsize_array(T))
+                N = fixed_array_length(T)
                 ET = eltype(T)
-                if N == 1 && ET <: cli.Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
+                if N == 1 && ET <: Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
                     return expr.args[2]
                 end
                 # todo replace static indices
                 idx = expr.args[3]
-                if cli.is_fixedsize_array(T)
+                if is_fixedsize_array(T)
                     if !isa(idx, Integer)
                         error("Only static indices are allowed for small vectors!")
                     end
@@ -87,7 +86,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
                 ret = Expr(:ref, expr.args[2], idx_expr)
                 ret.typ = expr.typ
                 return ret
-        elseif T <: CLDeviceArray && all(x-> x <: Integer, types[2:end])
+        elseif T <: GLDeviceArray && all(x-> x <: Integer, types[2:end])
                 idxs = expr.args[3:end]
                 idx_expr = map(idxs) do idx
                     if isa(idx, Integer)
@@ -120,14 +119,14 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
             end
         end
     # Base.^ is in OpenCL pow
-    elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
-        expr.args[1] = cli.pow
+    elseif f == (^) && length(types) == 2 && all(t-> t <: Numbers, types)
+        expr.args[1] = pow
         return expr
     # Constructors
     elseif F <: Type
         realtype = Sugar.expr_type(li, expr)
         # C/Opencl uses curly braces for constructors
-        ret = Expr(:curly, realtype, expr.args[2:end]...)
+        ret = Expr(:call, realtype, expr.args[2:end]...)
         ret.typ = realtype
         return ret
     elseif F <: Function
