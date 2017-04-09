@@ -1,4 +1,3 @@
-Pkg.checkout("Sugar")
 using Transpiler
 using Base.Test
 
