@@ -1,8 +1,10 @@
 __precompile__(true)
 module Transpiler
 
-using StaticArrays
-using Compat
+using StaticArrays, Compat
+using Sugar, DataStructures
+using GLAbstraction, StaticArrays, ModernGL, OpenCL
+
 
 include("clike/shared.jl")
 include("clike/opengl/compilation.jl")

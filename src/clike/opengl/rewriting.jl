@@ -3,7 +3,6 @@
 # Here we rewrite the AST to make it easier to transpile, turning it into an
 # invalid julia AST. The idea is to remove more logick from the actual printing
 # to glsl string
-using Sugar, DataStructures, StaticArrays
 import Sugar: similar_expr, instance, rewrite_function
 
 # Functions

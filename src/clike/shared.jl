@@ -1,6 +1,6 @@
-using Sugar, StaticArrays
 import Sugar: ASTIO, LazyMethod, typename, functionname, _typename, show_name
 import Sugar: supports_overloading, show_type, show_function
+import SpecialFunctions: erf, erfc
 
 @compat abstract type CIO <: ASTIO end
 
@@ -47,7 +47,7 @@ pow{T <: Numbers}(a::T, b::T) = ret(T)
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
     sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
-    abs, pow, log10, exp, erf, normalize, dot
+    abs, pow, log10, exp, erf, erfc, normalize, dot
 )
 
 global replace_unsupported, empty_replace_cache!

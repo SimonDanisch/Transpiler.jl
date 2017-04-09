@@ -1,6 +1,3 @@
-using Compat
-
-using Sugar, OpenCL, StaticArrays
 using OpenCL: cl
 import Sugar: LazyMethod
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic

@@ -1,10 +1,7 @@
-using Compat
 
-using Sugar, GLAbstraction, StaticArrays
-import Sugar: LazyMethod
+import Sugar: LazyMethod, supports_overloading, expr_type
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic
 import Sugar: typename, functionname, show_name, show_type, show_function
-import Sugar: supports_overloading, expr_type
 
 const GLMethod = LazyMethod{:GL}
 

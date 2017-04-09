@@ -121,7 +121,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
         end
     # Base.^ is in OpenCL pow
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
-        expr.args[1] = cli.pow
+        expr.args[1] = pow
         return expr
     # Constructors
     elseif F <: Type
