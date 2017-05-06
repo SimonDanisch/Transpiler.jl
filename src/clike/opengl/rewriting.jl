@@ -6,29 +6,17 @@
 import Sugar: similar_expr, instance, rewrite_function
 
 # Functions
-function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
+function rewrite_function{F}(li::GLMethods, f::F, types::ANY, expr)
     if f == div && length(types) == 2 && all(x-> x <: Ints, types)
         expr.args[1] = (/)
         return expr
     elseif f == broadcast
         BF = types[1]
-        if BF <: gli.Functions && all(T-> T <: gli.Types, types[2:end])
+        if BF <: gli.Functions && all(T-> T <: gli.Types || is_fixedsize_array(T), types[2:end])
             shift!(expr.args) # remove broadcast from call expression
             expr.args[1] = Sugar.resolve_func(li, expr.args[1]) # rewrite if necessary
             return expr
         end
-        # if all(x-> x <: cli.Types, args)
-        #     ast = Sugar.sugared(f, types, code_lowered)
-        #     funcs = extract_funcs(ast)
-        #     types = extract_types(ast)
-        #     if all(is_intrinsic, funcs) && all(x-> (x <: cli.Types), types)
-        #         # if we only have intrinsic functions, numbers and vecs we can rewrite
-        #         # this broadcast to be direct function calls. since the intrinsics will
-        #         # already be broadcasted
-        #         ast = glsl_ast(broadcast, types)
-        #         false, :broadcast
-        #     end
-        # end
         expr.args[1] = f
         return expr
     elseif f == tuple
@@ -36,7 +24,7 @@ function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
         return expr
     elseif f == convert && length(types) == 2
         # BIG TODO, this changes semantic!!!! DONT
-        if types[1] == Type{types[2]}
+    if types[1] == Type{types[2]}
             return expr.args[3]
         else # But for now we just change a convert into a constructor call
             return similar_expr(expr, expr.args[2:end])
@@ -55,11 +43,42 @@ function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
         ret = Expr(:(=), Expr(:ref, expr.args[2], idx_expr...), expr.args[3])
         ret.typ = expr.typ
         return ret
+    elseif f == getfield
+        idx = expr.args[3]
+        if isa(idx, Integer)
+            name = Symbol(c_fieldname(types[1], idx))
+            ret = Expr(:call, getfield, expr.args[2], name)
+            ret.typ = expr.typ
+            return ret
+        elseif isa(idx, Symbol)
+            expr.args[1] = getfield
+            return expr
+        else
+            error("Indexing like: $expr not implemented")
+        end
     elseif f == getindex
         if !isempty(types)
             T = types[1]
+            indexchars = (:x, :y, :z, :w)
+            # Indexing with e.g. Vec(1,2)
+            if (length(types) == 2 &&
+                    is_fixedsize_array(types[2]) && (eltype(types[2]) <: Integer) &&
+                    (is_ntuple(T) || is_fixedsize_array(T)))
+                idx = expr.args[3].args[2:end]
+
+                idxsym = Symbol(join(map(idx) do idx
+                    if !isa(idx, Integer)
+                        error("Only static indices are allowed. Found: $idx")
+                    end
+                    indexchars[idx]
+                end, ""))
+                ret = Expr(:call, getfield, expr.args[2], idxsym)
+                ret.typ = expr.typ
+                return ret
             # homogenous tuples, translated to static array
-            if (length(types) == 2 && types[2] <: Integer) && (is_ntuple(T) || is_fixedsize_array(T))
+            elseif (length(types) == 2 && types[2] <: Integer) &&
+                    (is_ntuple(T) || is_fixedsize_array(T))
+
                 N = fixed_array_length(T)
                 ET = eltype(T)
                 if N == 1 && ET <: Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
@@ -71,7 +90,7 @@ function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
                     if !isa(idx, Integer)
                         error("Only static indices are allowed for small vectors!")
                     end
-                    idxsym = Symbol("s$(idx - 1)")
+                    idxsym = indexchars[idx]
                     ret = Expr(:call, getfield, expr.args[2], idxsym)
                     ret.typ = expr.typ
                     return ret
@@ -85,7 +104,7 @@ function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
                 ret = Expr(:ref, expr.args[2], idx_expr)
                 ret.typ = expr.typ
                 return ret
-        elseif T <: GLDeviceArray && all(x-> x <: Integer, types[2:end])
+            elseif T <: GLDeviceArray && all(x-> x <: Integer, types[2:end])
                 idxs = expr.args[3:end]
                 idx_expr = map(idxs) do idx
                     if isa(idx, Integer)
@@ -101,6 +120,9 @@ function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
                 idx = expr.args[3]
                 idx_expr = if isa(idx, Integer)
                     name = Symbol(c_fieldname(T, idx))
+                    ret = Expr(:call, getfield, expr.args[2], name)
+                    ret.typ = expr.typ
+                    return ret
                 else
                     # Will need some dynamic field lookup!
                     error(
@@ -108,18 +130,18 @@ function rewrite_function{F}(li::GLMethod, f::F, types::ANY, expr)
                         Found: $T with $(types[2:end])"
                     )
                 end
-                if false#is_pointer_type(T)
-                    ret = Expr(:(->), expr.args[2], idx_expr)
-                else
-                    error("indexing into $T not implemented")
-                end
+                error("indexing into $T not implemented")
                 ret.typ = expr.typ
                 return ret
             end
         end
-    # Base.^ is in OpenCL pow
+    # Base.^ is in OpenGL pow
     elseif f == (^) && length(types) == 2 && all(t-> t <: Numbers, types)
         expr.args[1] = pow
+        return expr
+    # StaticArrays.norm is in OpenGL length
+    elseif f == norm && length(types) == 1 && all(t-> is_fixedsize_array(t), types)
+        expr.args[1] = length
         return expr
     # Constructors
     elseif F <: Type

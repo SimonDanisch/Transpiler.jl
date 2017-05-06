@@ -6,7 +6,6 @@ import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
 import ..Transpiler: fixed_array_length, is_ntuple, is_fixedsize_array, GLMethod
 import ..Transpiler: AbstractGLIO, ret, vecs, Vecs, vector_lengths, functions
 
-
 import Sugar: typename, vecname
 using SpecialFunctions: erf
 
@@ -46,6 +45,10 @@ function typename{T, N}(io::AbstractGLIO, x::Type{GLArray{T, N}})
         "image$(N)D$(len)x$(sz)_bindless"
     end
 end
+function typename{T <: SMatrix}(io::AbstractGLIO, ::Type{T})
+    M, N = size(T)
+    string(prescripts[eltype(T)], "mat", M == N ? M : string(M, "x", N))
+end
 
 function vecname{T}(io::AbstractGLIO, t::Type{T})
     N = fixed_array_length(T)
@@ -61,6 +64,9 @@ imageLoad{T}(x::GLArray{T, 1}, i::int) = ret(NTuple{4, T})
 imageLoad{T}(x::GLArray{T, 2}, i::NTuple{2, int}) = ret(NTuple{4, T})
 imageSize{T, N}(x::GLArray{T, N}) = ret(NTuple{N, int})
 
+EmitVertex() = nothing
+EndPrimitive() = nothing
+
 const gl_GlobalInvocationID = (0,0,0)
 
 function glintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
@@ -70,17 +76,21 @@ function glintrinsic{F <: Function}(f::F, types::Tuple)
     # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
     if f == broadcast
         BF = types[1]
-        if BF <: Functions && all(T-> T <: Types, types[2:end])
+        if BF <: Functions && all(T-> T <: Types || is_fixedsize_array(T), types[2:end])
             return true
         end
     end
     if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
         return true
     end
+    # matmul
+    if f == (*)  && length(types) == 2 && all(T-> T <: StaticArray, types)
+        return true
+    end
     m = methods(f)
     isempty(m) && return false
     sym = first(m).name
-    (F <: Functions && all(T-> T <: Types, types)) || (
+    (F <: Functions && all(T-> T <: Types || is_fixedsize_array(T), types)) || (
         # if any intrinsic funtion stub matches
         isdefined(GLIntrinsics, sym) &&
         Base.binding_module(GLIntrinsics, sym) == GLIntrinsics &&
@@ -102,6 +112,7 @@ function gli.glintrinsic{T}(x::Type{T})
     T <: gli.Types ||
     is_fixedsize_array(T) ||
     T <: Tuple{Numbers} ||
+    (T <: SMatrix && all(x-> x <= 4, size(T))) ||
     T <: uchar # uchar in ints makes 0.6 segfault -.-
 end
 function isintrinsic(x::GLMethod)
@@ -121,17 +132,15 @@ function glintrinsic{T}(f::Type{T}, types::ANY)
 end
 
 # homogenous tuples, translated to glsl array
-function glintrinsic{N, T, I <: Integer}(
-        f::typeof(getindex), types::Type{Tuple{NTuple{N, T}, I}}
-    )
-    return true
-end
-
-function glintrinsic{T, I <: gli.Ints}(
+function glintrinsic{T, I}(
         f::typeof(getindex), types::Type{Tuple{T, I}}
     )
-    return is_fixedsize_array(T)
+
+    return (is_fixedsize_array(T) || is_ntuple(T)) && I <: Union{StaticArray, Integer}
 end
+
+
+
 function glintrinsic{T <: GLDeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
     )

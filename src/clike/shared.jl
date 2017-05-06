@@ -41,13 +41,20 @@ end
 const vecs = (_vecs...)
 const Vecs = Union{vecs...}
 
-pow{T <: Numbers}(a::T, b::T) = ret(T)
+pow{T <: Numbers}(a::T, b::T) = a ^ b
+
+function smoothstep{T}(edge0, edge1, x::T)
+    t = clamp.((x .- edge0) ./ (edge1 .- edge0), T(0), T(1))
+    return t * t * (T(3) - T(2) * t)
+end
+mix{T}(x, y, a::T) = x .* (T(1) .- a) .+ y .* a
+
 #######################################
 # globals
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
     sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
-    abs, pow, log10, exp, erf, erfc, normalize, dot
+    abs, pow, log10, exp, erf, erfc, normalize, dot, smoothstep, mix, norm, length
 )
 
 global replace_unsupported, empty_replace_cache!
@@ -62,7 +69,7 @@ is_ntuple(x) = false
 is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
 
 function is_fixedsize_array{T}(::Type{T})
-    (T <: SVector || is_ntuple(T)) &&
+    (T <: StaticVector || is_ntuple(T)) &&
     fixed_array_length(T) in vector_lengths &&
     eltype(T) <: Numbers
 end
@@ -90,7 +97,7 @@ function is_supported_char(io::CIO, char)
     # in a name
     isascii(char) &&
     !Base.isoperator(Symbol(char)) &&
-    !(char in ('.', '#'))  # some ascii codes are not allowed
+    !(char in ('.', '#', '(', ')', ','))  # some ascii codes are not allowed
 end
 
 function symbol_hygiene(io::CIO, sym)
@@ -101,9 +108,7 @@ function symbol_hygiene(io::CIO, sym)
         res = if is_supported_char(io, char)
             print(res_io, char)
         else
-            if i == 1 # can't start with number
-                print(res_io, '_')
-            end
+            i == 1 && print(res_io, 'x') # can't start with number
             print(res_io, replace_unsupported(char)) # get a
         end
     end
@@ -128,8 +133,9 @@ end
 
 const vector_lengths = (2, 3, 4, 8, 16)
 # don't do hygiene
-typename{N, T}(io::CIO, t::Type{SVector{N, T}}) = _typename(io, t)
-function _typename{N, T}(io::CIO, t::Type{SVector{N, T}})
+typename{SV <: StaticVector}(io::CIO, t::Type{SV}) = _typename(io, t)
+function _typename{SV <: StaticVector}(io::CIO, t::Type{SV})
+    N, T = length(SV), eltype(SV)
     if N == 1 && T <: Number
         return typename(io, T)
     elseif (N in vector_lengths) && T <: Number
@@ -264,10 +270,22 @@ function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)
 end
 
 function c_fieldname(T, i)
-    name = Base.fieldname(T, i)
+    try
+        name = Base.fieldname(T, i)
+    catch e
+        error("couldn't get field name for $T")
+    end
     if isa(name, Integer) # for types without fieldnames (Tuple)
         "field$name"
     else
         symbol_hygiene(EmptyGLIO(), name)
     end
+end
+function typed_type_fields(T)
+    args = []
+    for name in fieldnames(T)
+        FT = fieldtype(T, name)
+        push!(args, :($name::$FT))
+    end
+    args
 end

@@ -4,6 +4,8 @@ import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintr
 import Sugar: typename, functionname, show_name, show_type, show_function
 
 const GLMethod = LazyMethod{:GL}
+const GEOMMethod = LazyMethod{:GEOM}
+const GLMethods = Union{GLMethod, GEOMMethod}
 
 @compat abstract type AbstractGLIO <: CIO end
 immutable EmptyGLIO <: AbstractGLIO
@@ -14,7 +16,7 @@ immutable GLFunction{Args <: Tuple}
 end
 type GLIO{T <: IO} <: AbstractGLIO
     io::T
-    method::GLMethod
+    method::GLMethods
 end
 
 supports_overloading(io::GLIO) = true

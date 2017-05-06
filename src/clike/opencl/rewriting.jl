@@ -14,7 +14,7 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
         return expr
     elseif f == broadcast
         BF = types[1]
-        if BF <: cli.Functions && all(T-> T <: cli.Types, types[2:end])
+        if BF <: cli.Functions && all(T-> T <: cli.Types || is_fixedsize_array(T), types[2:end])
             shift!(expr.args) # remove broadcast from call expression
             expr.args[1] = Sugar.resolve_func(li, expr.args[1]) # rewrite if necessary
             return expr
