@@ -104,18 +104,10 @@ function rewrite_function{F}(li::GLMethods, f::F, types::ANY, expr)
                 ret = Expr(:ref, expr.args[2], idx_expr)
                 ret.typ = expr.typ
                 return ret
-            elseif T <: GLDeviceArray && all(x-> x <: Integer, types[2:end])
-                idxs = expr.args[3:end]
-                idx_expr = map(idxs) do idx
-                    if isa(idx, Integer)
-                        idx - 1
-                    else
-                        :($(expr.args[3]) - 1)
-                    end
-                end
-                ret = Expr(:ref, expr.args[2], idx_expr...)
-                ret.typ = expr.typ
-                return ret
+            elseif T <: AbstractArray
+                # lets hope it has a sensible getindex
+                expr.args[1] = getindex
+                return expr
             else
                 idx = expr.args[3]
                 idx_expr = if isa(idx, Integer)

@@ -30,13 +30,14 @@ function show_unquoted(io::GLIO, sym::Symbol, ::Int, ::Int)
 end
 
 function show_unquoted(io::GLIO, ex::GlobalRef, ::Int, ::Int)
-    # TODO Why is Base.x suddenly == GPUArrays.GLBackend.x
-    #if ex.mod == GLSLIntrinsics# || ex.mod == GPUArrays.GLBackend
-        print(io, ex.name)
-    #else
-    #    error("No non Intrinsic GlobalRef's for now!: $ex")
-    #end
+    # TODO disregarding modules doesn't seem to be a good idea.
+    # Thought about just appending the module to the name, but this doesn't work
+    # very well, since Julia allows itself quite a bit of freedom, when it's attaching
+    # the module to a name or not. E.g. depending on where things where created, you might get
+    # GPUArrays.GPUArray, or Visualize.GPUArrays.GPUArray.
+    print(io, ex.name)
 end
+
 
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
 function show_call(io::GLIO, head, func, func_args, indent)
@@ -422,14 +423,14 @@ end
 function show_interface_block(
         io, T, name;
         qualifier::Symbol = :uniform, layout = ["std140"],
-        array::Int = -1
+        array::Int = -1, blockname = glsl_gensym(name)
     )
     array_expr = array_string(array)
     if !isempty(layout)
         print(io, "layout ")
         print(io, '(', join(layout, ", "), ") ")
     end
-    print(io, "$qualifier ", glsl_gensym(name), "{\n    ")
+    print(io, "$qualifier ", blockname, "{\n    ")
     show_type(io, T)
     print(io, ' ')
     show_name(io, name)
@@ -438,7 +439,8 @@ end
 
 function print_dependencies(io, m; funcio = io, typio = io)
     # dependencies
-    deps = reverse(collect(Sugar.dependencies!(m, true)))
+    deps = Sugar.dependencies!(m, true)
+    deps = reverse(collect(deps))
     types = filter(Sugar.istype, deps)
     funcs = filter(Sugar.isfunction, deps)
     println(typio, "// dependant type declarations")
@@ -457,8 +459,17 @@ end
 
 function show_uniforms(io, arg_names, arg_types)
     println(io, "// uniform inputs:")
-    for (name, T) in zip(arg_names, arg_types)
-        show_interface_block(io, T, name, qualifier = :uniform)
+    for (i, (name, T)) in enumerate(zip(arg_names, arg_types))
+        if T <: gli.GLTexture
+            println("uniform ", GLAbstraction.glsl_typename(T), " ")
+            show_name(io, name)
+            print(io, ';')
+        else
+            show_interface_block(
+                io, T, name, qualifier = :uniform,
+                blockname = glsl_gensym("UniformArg$i")
+            )
+        end
         println(io)
     end
 end
@@ -494,7 +505,7 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     ast.typ = Void
 
     # TODO glsl version string?!
-    println(io, "#version 430")
+    println(io, "#version 330")
 
     print_dependencies(io, m)
 
@@ -535,7 +546,6 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     end
 
     vertexsym = :vertex_out
-    # println("LOOLO????")
     # println(io, Sugar.getsource!(GLMethod(vertex_out_T)))
     show_varying(io, vertex_out_T, vertexsym, qualifier = :out)
     # write to out
@@ -569,6 +579,7 @@ function emit_fragment_shader(shader, arguments)
     # get body ast
     Sugar.getcodeinfo!(m) # make sure codeinfo is present
     ast = Sugar.sugared(m.signature..., code_typed)
+    println(ast)
     for i in (nargs + 1):length(stypes)
         T = stypes[i]
         slot = SlotNumber(i)
@@ -582,7 +593,7 @@ function emit_fragment_shader(shader, arguments)
     ret_expr = pop!(ast.args)
     ast.typ = Void
 
-    println(io, "#version 430")
+    println(io, "#version 330")
 
     print_dependencies(io, m)
 
@@ -683,7 +694,7 @@ end
 
 function emit_geometry_shader(
         shader, arguments::Tuple;
-        geometry_primitives = 4,
+        max_primitives = 4,
         primitive_in = :points,
         primitive_out = :triangle_strip
     )
@@ -711,9 +722,9 @@ function emit_geometry_shader(
     # get body ast
     ast = Sugar.getast!(m)
 
-    println(io, "#version 430")
+    println(io, "#version 330")
     println(io, "layout($primitive_in) in;")
-    println(io, "layout($primitive_out, max_vertices = $geometry_primitives) out;")
+    println(io, "layout($primitive_out, max_vertices = $max_primitives) out;")
 
     # dependencies
     deps = reverse(collect(Sugar.dependencies!(m, true)))

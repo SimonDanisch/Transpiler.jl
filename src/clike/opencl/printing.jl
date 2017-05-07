@@ -30,12 +30,12 @@ function show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
 end
 
 function show_unquoted(io::CLIO, ex::GlobalRef, ::Int, ::Int)
-    # TODO Why is Base.x suddenly == GPUArrays.GLBackend.x
-    #if ex.mod == GLSLIntrinsics# || ex.mod == GPUArrays.GLBackend
-        print(io, ex.name)
-    #else
-    #    error("No non Intrinsic GlobalRef's for now!: $ex")
-    #end
+    # TODO disregarding modules doesn't seem to be a good idea.
+    # Thought about just appending the module to the name, but this doesn't work
+    # very well, since Julia allows itself quite a bit of freedom, when it's attaching
+    # the module to a name or not. E.g. depending on where things where created, you might get
+    # GPUArrays.GPUArray, or Visualize.GPUArrays.GPUArray.
+    print(io, ex.name)
 end
 
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]

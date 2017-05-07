@@ -1,6 +1,6 @@
 module GLIntrinsics
 
-using StaticArrays, Sugar
+using StaticArrays, Sugar, GeometryTypes
 
 import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
 import ..Transpiler: fixed_array_length, is_ntuple, is_fixedsize_array, GLMethod
@@ -10,7 +10,7 @@ import Sugar: typename, vecname
 using SpecialFunctions: erf
 
 immutable GLArray{T, N} <: AbstractArray{T, N} end
-immutable GLTexture{T} <: AbstractArray{T, 1} end
+immutable GLTexture{T, N} <: AbstractArray{T, N} end
 
 const GLDeviceArray = Union{GLArray, GLTexture}
 
@@ -31,6 +31,9 @@ prescripts = Dict(
     Bool => "b"
 )
 
+function typename{T, N}(io::AbstractGLIO, x::Type{GLTexture{T, N}})
+    string(prescripts[eltype(T)], "sampler", N, "D")
+end
 function typename{T, N}(io::AbstractGLIO, x::Type{GLArray{T, N}})
     if !(N in (1, 2, 3))
         # TODO, fake ND arrays with 1D array
@@ -56,18 +59,26 @@ function vecname{T}(io::AbstractGLIO, t::Type{T})
     return string(prescripts[ET], "vec", N)
 end
 
-
 imageStore{T}(x::GLArray{T, 1}, i::int, val::NTuple{4, T}) = nothing
 imageStore{T}(x::GLArray{T, 2}, i::NTuple{2, int}, val::NTuple{4, T}) = nothing
 
 imageLoad{T}(x::GLArray{T, 1}, i::int) = ret(NTuple{4, T})
 imageLoad{T}(x::GLArray{T, 2}, i::NTuple{2, int}) = ret(NTuple{4, T})
+
+texelFetch{T}(x::GLTexture{T, 1}, i::int, lod::int) = ret(NTuple{4, T})
+texelFetch{T}(x::GLTexture{T, 2}, i::NTuple{2, int}, lod::int) = ret(NTuple{4, T})
+
+texture{T}(x::GLTexture{T, 1}, i::Float32) = ret(NTuple{4, T})
+texture{T}(x::GLTexture{T, 2}, i::Vec2f0) = ret(NTuple{4, T})
+
 imageSize{T, N}(x::GLArray{T, N}) = ret(NTuple{N, int})
+textureSize{T, N}(::GLTexture{T, N}) = ret(NTuple{N, int})
+
 
 EmitVertex() = nothing
 EndPrimitive() = nothing
 
-const gl_GlobalInvocationID = (0,0,0)
+const gl_GlobalInvocationID = (0, 0, 0)
 
 function glintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     glintrinsic(f, Sugar.to_tuple(types))
@@ -101,9 +112,9 @@ end
 end # end GLIntrinsics
 
 using .GLIntrinsics
-
+using GeometryTypes
 const gli = GLIntrinsics
-import .gli: glintrinsic, GLArray, GLDeviceArray
+import .gli: glintrinsic, GLArray, GLDeviceArray, GLTexture
 
 import Sugar.isintrinsic
 
@@ -127,9 +138,7 @@ end
 # copied from rewriting. TODO share implementation!
 
 # Make constructors inbuild for now. TODO, only make default constructors inbuild
-function glintrinsic{T}(f::Type{T}, types::ANY)
-    return true
-end
+glintrinsic{T}(f::Type{T}, types::ANY) = true
 
 # homogenous tuples, translated to glsl array
 function glintrinsic{T, I}(
@@ -139,29 +148,29 @@ function glintrinsic{T, I}(
     return (is_fixedsize_array(T) || is_ntuple(T)) && I <: Union{StaticArray, Integer}
 end
 
-
-
 function glintrinsic{T <: GLDeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
     )
     return true
 end
 
-function glintrinsic(f::typeof(tuple), types::Tuple)
-    true
-end
+glintrinsic(f::typeof(tuple), types::Tuple) = true
 
+import Base: getindex, setindex!, size
 
-function GlobalInvocationID()
-    gli.gl_GlobalInvocationID
-end
+GlobalInvocationID() = gli.gl_GlobalInvocationID
 
-function Base.size{T, N}(x::gli.GLArray{T, N})
-    gli.imageSize(x)
-end
-function Base.getindex{T}(x::gli.GLArray{T, 1}, i::Integer)
-    gli.imageLoad(x, i)
-end
+size{T, N}(x::gli.GLArray{T, N}) = gli.imageSize(x)
+size{T, N}(x::gli.GLTexture{T, N}) = gli.textureSize(x)
+
+getindex{T}(x::gli.GLTexture{T, 1}, i::Integer) = gli.texelFetch(x, i, 0)
+getindex{T}(x::gli.GLTexture{T, 1}, i::Integer, j::Integer) = gli.texelFetch(x, (i, j), 0)
+
+getindex{T}(x::gli.GLTexture{T, 1}, i::AbstractFloat) = gli.texture(x, i)
+getindex{T}(x::gli.GLTexture{T, 2}, i::AbstractFloat, j::AbstractFloat) = gli.texture(x, Vec2f0(i, j))
+getindex{T}(x::gli.GLTexture{T, 2}, idx::Vec2f0) = gli.texture(x, idx)
+
+getindex{T}(x::gli.GLArray{T, 1}, i::Integer) = gli.imageLoad(x, i)
 function Base.getindex{T}(x::gli.GLArray{T, 2}, i::Integer, j::Integer)
     getindex(x, (i, j))
 end
@@ -183,3 +192,6 @@ end
 function Base.setindex!{T}(x::gli.GLArray{T, 1}, val::NTuple{4, T}, i::Integer)
     gli.imageStore(x, i, val)
 end
+
+
+GLTexture
