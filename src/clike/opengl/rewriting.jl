@@ -5,17 +5,75 @@
 # to glsl string
 import Sugar: similar_expr, instance, rewrite_function
 
+
+"""
+
+"""
+function replace_slots_exctract_function(m, expr, slot2replace)
+    used_functions = []
+    list = Sugar.replace_expr(expr) do expr
+        if isa(expr, Expr)
+            if expr.head == :call
+                f = Sugar.resolve_func(m, expr.args[1])
+                types = Tuple{map(arg-> Sugar.expr_type(m, arg), expr.args[2:end])...}
+                push!(used_functions, (f, types))
+            end
+        elseif isa(expr, Slot) && haskey(slot2replace, expr)
+            return true, slot2replace[expr]
+        end
+        return false, expr
+    end
+    println("list : ", list)
+    list[1], used_functions
+end
+
+function inline_expr(m, f, types, call_args)
+    lambda = Sugar.get_lambda(code_typed, f, types)
+    ast = Sugar.get_ast(lambda)
+    ast = normalize_ast(ast)
+    body = Expr(:block)
+    append!(body.args, ast)
+    nargs = length(call_args)
+    tmp_assigns = []; slot2replace = Dict{SlotNumber, TypedSlot}()
+    st = Sugar.slottypes(m)
+    max_slot_id = length(st)
+
+    for (i, expr) in enumerate(call_args)
+        slot = TypedSlot(max_slot_id + i, expr_type(m, expr))
+        slot2replace[SlotNumber(i)] = slot
+        push!(tmp_assigns, :($slot = $expr))
+    end
+    ast, funs = replace_slots_exctract_function(m, body, slot2replace)
+    unshift!(ast.args, tmp_assigns...)
+    ast, funs
+end
 # Functions
-function rewrite_function{F}(li::GLMethods, f::F, types::ANY, expr)
+function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
     if f == div && length(types) == 2 && all(x-> x <: Ints, types)
         expr.args[1] = (/)
         return expr
     elseif f == broadcast
         BF = types[1]
-        if BF <: gli.Functions && all(T-> T <: gli.Types || is_fixedsize_array(T), types[2:end])
-            shift!(expr.args) # remove broadcast from call expression
-            expr.args[1] = Sugar.resolve_func(li, expr.args[1]) # rewrite if necessary
-            return expr
+        if all(T-> T <: gli.Types || is_fixedsize_array(T), types[2:end])
+            if BF <: gli.Functions
+                shift!(expr.args) # remove broadcast from call expression
+                expr.args[1] = Sugar.resolve_func(m, expr.args[1]) # rewrite if necessary
+                return expr
+            else
+                arg_types = map(eltype, types[2:end])
+                call_args = expr.args[3:end]
+                @assert length(arg_types) == length(call_args)
+                bf = Sugar.resolve_func(m, expr.args[2])
+                ast, used_funcs = inline_expr(m, bf, arg_types, call_args)
+                can_inline = all(used_funcs) do f_args
+                    isintrinsic(GLMethod(f_args))
+                end
+                @show can_inline
+                for (f, typ) in used_funcs
+                    println("    ", f, " ", typ)
+                end
+                can_inline && return ast
+            end
         end
         expr.args[1] = f
         return expr
@@ -137,7 +195,7 @@ function rewrite_function{F}(li::GLMethods, f::F, types::ANY, expr)
         return expr
     # Constructors
     elseif F <: Type
-        realtype = Sugar.expr_type(li, expr)
+        realtype = Sugar.expr_type(m, expr)
         # C/Opencl uses curly braces for constructors
         ret = Expr(:call, realtype, expr.args[2:end]...)
         ret.typ = realtype

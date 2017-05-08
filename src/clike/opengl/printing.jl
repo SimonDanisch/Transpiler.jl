@@ -440,6 +440,10 @@ end
 function print_dependencies(io, m; funcio = io, typio = io)
     # dependencies
     deps = Sugar.dependencies!(m, true)
+    println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+    println("_--------------------------------------")
+    println("_--------------------------------------")
+    println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
     deps = reverse(collect(deps))
     types = filter(Sugar.istype, deps)
     funcs = filter(Sugar.isfunction, deps)
@@ -461,7 +465,9 @@ function show_uniforms(io, arg_names, arg_types)
     println(io, "// uniform inputs:")
     for (i, (name, T)) in enumerate(zip(arg_names, arg_types))
         if T <: gli.GLTexture
-            println("uniform ", GLAbstraction.glsl_typename(T), " ")
+            print(io, "uniform ")
+            show_type(io, T)
+            print(io, ' ')
             show_name(io, name)
             print(io, ';')
         else
@@ -579,7 +585,6 @@ function emit_fragment_shader(shader, arguments)
     # get body ast
     Sugar.getcodeinfo!(m) # make sure codeinfo is present
     ast = Sugar.sugared(m.signature..., code_typed)
-    println(ast)
     for i in (nargs + 1):length(stypes)
         T = stypes[i]
         slot = SlotNumber(i)
