@@ -366,23 +366,6 @@ function functionname(io::GLIO, f, types)
 end
 
 
-function typed_type_fields(T)
-    nf = nfields(T)
-    fields = []
-    if nf == 0 # structs can't be empty
-        # we use bool as a short placeholder type.
-        # TODO, are there cases where bool is no good?
-        push!(fields, :(emtpy::Float32))
-    else
-        for i in 1:nf
-            FT = fieldtype(T, i)
-            tname = Symbol(typename(EmptyGLIO(), FT))
-            fname = Symbol(c_fieldname(T, i))
-            push!(fields, :($fname::$tname))
-        end
-    end
-    fields
-end
 
 function glsl_gensym(name)
     # TODO track all symbols and actually emit a unique symbol
