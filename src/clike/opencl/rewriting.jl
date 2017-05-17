@@ -43,9 +43,8 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
         else # But for now we just change a convert into a constructor call
             return similar_expr(expr, expr.args[2:end])
         end
-    elseif f == setindex! && length(types) == 3 &&
+    elseif f == setindex! && length(types) >= 3 &&
             types[1] <: CLDeviceArray && all(x-> x <: Integer, types[3:end])
-
         idxs = expr.args[4:end]
         idx_expr = map(idxs) do idx
             if isa(idx, Integer)

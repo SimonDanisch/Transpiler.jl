@@ -63,12 +63,14 @@ mix performs a linear interpolation between x and y using a to weight between th
 """
 mix{T}(x, y, a::T) = x .* (T(1) .- a) .+ y .* a
 
+fract(x) = x - floor(x)
 #######################################
 # globals
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
-    sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
-    abs, pow, log10, exp, erf, erfc, normalize, dot, smoothstep, mix, norm, length
+    sin, tan, sqrt, cos, mod, floor, fract, log, atan2, max, min,
+    abs, pow, log10, exp, erf, erfc, normalize, cross, dot, smoothstep, mix, norm,
+    length, clamp, cospi, sinpi, asin
 )
 
 global replace_unsupported, empty_replace_cache!

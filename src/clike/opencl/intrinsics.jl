@@ -130,6 +130,12 @@ function clintrinsic{T <: CLDeviceArray, Val, I <: Integer}(
     )
     return true
 end
+function clintrinsic{T <: CLDeviceArray, Val, I <: Integer}(
+        f::typeof(setindex!), types::Type{Tuple{T, Val, I, I}}
+    )
+    return true
+end
+
 
 function clintrinsic(f::typeof(tuple), types::Tuple)
     true
