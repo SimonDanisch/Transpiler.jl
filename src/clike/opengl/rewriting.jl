@@ -49,7 +49,6 @@ function inline_expr(m, f, types, call_args)
 end
 # Functions
 function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
-    println("type f ", f, " ", typeof(f))
     if f == div && length(types) == 2 && all(x-> x <: Ints, types)
         expr.args[1] = (/)
         return expr

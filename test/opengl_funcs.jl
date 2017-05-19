@@ -65,85 +65,35 @@ immutable Shading{T}
     shininess::T
 end
 
-function blinnphong{NV, T}(light, L::Vec{NV, T}, N, V, color, shading)
-    diff_coeff = max(dot(L,N), T(0.0f0))
-    # specular coefficient
-    H = normalize(L + V)
-    spec_coeff = max(dot(H,N), T(0.0f0)) ^ (shading.shininess)
-    if diff_coeff <= T(0.0)
-        spec_coeff = T(0.0)
-    elseif diff_coeff <= T(0.2)
-        # some nonesense to test elseif
-        spec_coeff *= T(2.0)
-        spec_coeff += T(1.0)
-    else
-        spec_coeff = spec_coeff
-        return L
-    end
-    # final lighting model
-    return Vec3f0(
-        light.ambient .* shading.ambient +
-        light.diffuse .* light.diffuse_power .* color * diff_coeff +
-        light.specular .* light.specular_power .* shading.specular * spec_coeff
-    )
+function blinnphong{NV, T}(V::Vec{NV, T}, N, L, color, shading, light)
+    lambertian = max(dot(L, N), 0f0)
+    half_direction = normalize(L .+ V)
+    specular_angle = max(dot(half_direction, N), 0.0)
+    specular = specular_angle ^ shading.shininess
+    surf_color = (lambertian * color) .+ (specular * shading.specular)
+    return light.ambient .+ surf_color
 end
 
 decl = Transpiler.GLMethod((blinnphong, (
-    Light{Float32}, Vec3f0, Vec3f0, Vec3f0, Vec3f0, Shading{Float32}
+    Vec3f0, Vec3f0, Vec3f0, Vec3f0, Shading{Float32}, Light{Float32}
 )))
-deps = Sugar.dependencies!(decl, true);
-for dep in deps
-    if !Sugar.isintrinsic(dep)
-        println(Sugar.getsource!(dep))
-    end
-end
-SVector{3,Float32}
-# ast = Sugar.getast!(decl)
-# isa(ast.args[12].args[2].args[1], Type)
-# println(ast)
-source = Sugar.getsource!(decl)
-println(source)
 
-testsource = """
-vec3 blinnphong(Light_float light, vec3 L, vec3 N, vec3 V, vec3 color, Shading_float shading)
+source = Sugar.getsource!(decl);
+testsource = """vec3 blinnphong(vec3 V, vec3 N, vec3 L, vec3 color, Shading_float shading, Light_float light)
 {
-    float spec_coeff;
-    vec3 H;
-    float diff_coeff;
-    diff_coeff = max(dot(L, N), float(0.0));
-    H = normalize(L + V);
-    spec_coeff = pow(max(dot(H, N), float(0.0)), shading.shininess);
-    if(diff_coeff <= float(0.0)){
-        spec_coeff = float(0.0);
-    } else{
-        if(diff_coeff <= float(0.2)){
-            spec_coeff = spec_coeff * float(2.0);
-            spec_coeff = spec_coeff + float(1.0);
-        };
-        spec_coeff = spec_coeff;
-        return L;
-    };
-    return vec3(_45(light.ambient, shading.ambient) + _45(_45(light.diffuse, light.diffuse_power), color) * diff_coeff + _45(_45(light.specular, light.specular_power), shading.specular) * spec_coeff);
+    vec3 surf_color;
+    float specular;
+    float specular_angle;
+    vec3 half_direction;
+    float lambertian;
+    lambertian = max(dot(L, N), 0.0);
+    half_direction = normalize(L + V);
+    specular_angle = max(dot(half_direction, N), 0.0);
+    specular = pow(specular_angle, shading.shininess);
+    surf_color = lambertian * color + specular * shading.specular;
+    return light.ambient + surf_color;
 }"""
+
 @testset "blinnphong" begin
     @test source == testsource
 end
-
-function test(a, b, c, s)
-    x = a .* b
-    y = (c .* dot(b, c)) .* (b * s) +
-    c .* a .* b * s
-    x +
-end
-function test(a, b, c, s)
-    a .* b +
-    c .* dot(b, c) .* b * s +
-    c .* a .* b * s
-end
-using BenchmarkTools
-bench = @benchmark test(
-    $(SVector(1f0, 2f0, 3f0)),
-    $(SVector(1f0, 1f0, 1f0)),
-    $(SVector(1f0, 1f0, 1f0)),
-    $(7.42f0)
-)
