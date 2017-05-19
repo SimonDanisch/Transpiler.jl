@@ -144,7 +144,7 @@ function show_unquoted(io::GLIO, ex::Expr, indent::Int, prec::Int)
                 end
 
             # unary operator (i.e. "!z")
-            elseif isa(fname, Symbol) && fname in uni_ops && length(func_args) == 1
+            elseif fname in uni_ops && length(func_args) == 1
                 print(io, fname)
                 if isa(func_args[1], Expr) || func_args[1] in all_ops
                     show_enclosed_list(io, '(', func_args, ",", ')', indent, func_prec)
@@ -345,7 +345,7 @@ function functionname(io::GLIO, f, types)
         if isa(f, Expr)
             f = f.typ
         end
-        return _typename(io, f)
+        return typename(io, f)
     end
     method = try
         LazyMethod(io.method, f, types)
@@ -423,10 +423,6 @@ end
 function print_dependencies(io, m; funcio = io, typio = io)
     # dependencies
     deps = Sugar.dependencies!(m, true)
-    println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
-    println("_--------------------------------------")
-    println("_--------------------------------------")
-    println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
     deps = reverse(collect(deps))
     types = filter(Sugar.istype, deps)
     funcs = filter(Sugar.isfunction, deps)
@@ -687,10 +683,16 @@ function emit_geometry_shader(
         primitive_out = :triangle_strip
     )
     emitfunctype = first(arguments)
+    @show emitfunctype
     emitfunc = Sugar.instance(emitfunctype)
     geom_inT = arguments[2]
+    tup_geom = if primitive_in == :points
+        Tuple{geom_inT}
+    elseif primitive_in == :lines
+        NTuple{2, geom_inT}
+    end
     # for type inference, geom in needs to be a tuple, while when we work with it, it's just the type itself
-    m = GEOMMethod((shader, Tuple{arguments[1], Tuple{geom_inT}, arguments[3:end]...}))
+    m = GEOMMethod((shader, Tuple{arguments[1], tup_geom, arguments[3:end]...}))
     geom_out_name = :geom_out
 
     m.cache[:emitfunc] = emitfunc; m.cache[:emit_func_args] = []
@@ -720,7 +722,7 @@ function emit_geometry_shader(
     funcs = filter(Sugar.isfunction, deps)
     println(io, "// dependant type declarations")
     for typ in types
-        if !Sugar.isintrinsic(typ) && !(Tuple{geom_inT} == typ.signature)
+        if !Sugar.isintrinsic(typ) && !(tup_geom == typ.signature)
             println(io, Sugar.getsource!(typ))
         end
     end
@@ -728,14 +730,14 @@ function emit_geometry_shader(
     io2 = GLIO(IOBuffer(), m)
     for func in funcs
         if !Sugar.isintrinsic(func) && !(Sugar.getfunction(func) == emitfunc)
-            println(func.signature)
+            println("      ", func.signature)
             println(io2, Sugar.getsource!(func))
         end
     end
     emit_args = m.cache[:emit_func_args]
     arg_usage = "(gl_Position::Vec4f0, fragment_args::Any)"
     emit_arg1 = first(emit_args)
-    usage = "you must call the emit function with: (gl_Position <: Vec4f0, fragment_args <: Any), with the same types for every call"
+    usage = "you must call the emit function with: (gl_Position <: Vec4f0, fragment_args <: Any), or with the same types for every call"
     !all(x-> emit_arg1 == x, emit_args) && error(usage)
     !(first(emit_args)[1] <: Vec4f0) && error(usage)
     geometry_outT = emit_arg1[2]
@@ -763,5 +765,7 @@ function emit_geometry_shader(
     emitname = snames[2]
     unshift!(src_ast.args, :($emitname::$emitfunctype))
     Base.show_unquoted(io, src_ast, 0, 0)
-    take!(io.io), geometry_outT
+    src = take!(io.io)
+    write(STDOUT, src)
+    src, geometry_outT
 end

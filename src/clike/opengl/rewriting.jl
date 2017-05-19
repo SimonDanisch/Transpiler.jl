@@ -49,6 +49,7 @@ function inline_expr(m, f, types, call_args)
 end
 # Functions
 function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
+    println("type f ", f, " ", typeof(f))
     if f == div && length(types) == 2 && all(x-> x <: Ints, types)
         expr.args[1] = (/)
         return expr
@@ -60,19 +61,15 @@ function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
                 expr.args[1] = Sugar.resolve_func(m, expr.args[1]) # rewrite if necessary
                 return expr
             else
-                arg_types = map(eltype, types[2:end])
-                call_args = expr.args[3:end]
-                @assert length(arg_types) == length(call_args)
-                bf = Sugar.resolve_func(m, expr.args[2])
-                ast, used_funcs = inline_expr(m, bf, arg_types, call_args)
-                can_inline = all(used_funcs) do f_args
-                    isintrinsic(GLMethod(f_args))
-                end
-                @show can_inline
-                for (f, typ) in used_funcs
-                    println("    ", f, " ", typ)
-                end
-                can_inline && return ast
+                # arg_types = map(eltype, types[2:end])
+                # call_args = expr.args[3:end]
+                # @assert length(arg_types) == length(call_args)
+                # bf = Sugar.resolve_func(m, expr.args[2])
+                # ast, used_funcs = inline_expr(m, bf, arg_types, call_args)
+                # can_inline = all(used_funcs) do f_args
+                #     isintrinsic(GLMethod(f_args))
+                # end
+                # can_inline && return ast
             end
         end
         expr.args[1] = f
@@ -195,6 +192,7 @@ function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
         return expr
     # Constructors
     elseif F <: Type
+
         realtype = Sugar.expr_type(m, expr)
         # C/Opencl uses curly braces for constructors
         ret = Expr(:call, realtype, expr.args[2:end]...)

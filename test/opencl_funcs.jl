@@ -112,12 +112,11 @@ end
 decl = CLMethod((fortest, (Float32,)))
 source = Sugar.getsource!(decl)
 #TODO remove xxtempx4, which is unused now...
-target_source = """
-float fortest_6(float x)
+target_source = """float fortest_6(float x)
 {
-    int i;
-    int xxtempx4;
     float acc;
+    int xxtempx4;
+    int i;
     acc = x;
     for(i = 1; i <= 5; i++){
         if(i == 1){

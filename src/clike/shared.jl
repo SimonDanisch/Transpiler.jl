@@ -247,6 +247,7 @@ function functionname(io::CIO, f, types)
         if isa(f, Expr)
             f = f.typ
         end
+
         return string('(', _typename(io, f), ')')
     end
     method = try

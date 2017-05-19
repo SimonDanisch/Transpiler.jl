@@ -22,12 +22,12 @@ end
 decl = GLMethod((fortest, (Float32,)))
 source = Sugar.getsource!(decl)
 #TODO remove xxtempx4, which is unused now...
-testsource = """
-float fortest(float x)
+
+testsource = """float fortest(float x)
 {
-    int i;
-    int xxtempx4;
     float acc;
+    int xxtempx4;
+    int i;
     acc = x;
     for(i = 1; i <= 5; i++){
         if(i == 1){
@@ -91,8 +91,19 @@ end
 decl = Transpiler.GLMethod((blinnphong, (
     Light{Float32}, Vec3f0, Vec3f0, Vec3f0, Vec3f0, Shading{Float32}
 )))
-
+deps = Sugar.dependencies!(decl, true);
+for dep in deps
+    if !Sugar.isintrinsic(dep)
+        println(Sugar.getsource!(dep))
+    end
+end
+SVector{3,Float32}
+# ast = Sugar.getast!(decl)
+# isa(ast.args[12].args[2].args[1], Type)
+# println(ast)
 source = Sugar.getsource!(decl)
+println(source)
+
 testsource = """
 vec3 blinnphong(Light_float light, vec3 L, vec3 N, vec3 V, vec3 color, Shading_float shading)
 {
@@ -117,3 +128,22 @@ vec3 blinnphong(Light_float light, vec3 L, vec3 N, vec3 V, vec3 color, Shading_f
 @testset "blinnphong" begin
     @test source == testsource
 end
+
+function test(a, b, c, s)
+    x = a .* b
+    y = (c .* dot(b, c)) .* (b * s) +
+    c .* a .* b * s
+    x +
+end
+function test(a, b, c, s)
+    a .* b +
+    c .* dot(b, c) .* b * s +
+    c .* a .* b * s
+end
+using BenchmarkTools
+bench = @benchmark test(
+    $(SVector(1f0, 2f0, 3f0)),
+    $(SVector(1f0, 1f0, 1f0)),
+    $(SVector(1f0, 1f0, 1f0)),
+    $(7.42f0)
+)

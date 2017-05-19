@@ -23,7 +23,7 @@ show_linenumber(io::CLIO, line, file) = print(io, " // ", file, ", line ", line,
 
 # don't print f0 TODO this is a Float32 hack
 function show(io::CLIO, x::Float32)
-    print(io, Float64(x))
+    print(io, Float64(x), 'f')
 end
 function show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
