@@ -7,12 +7,20 @@ os:
 
 julia:
   - 0.5
-  - nightly
+  - 0.6
 
 notifications:
   email: false
+addons:
+  apt:
+    packages:
+    - cmake
+    - libxxf86vm-dev
+    sources:
+    - kubuntu-backports
 
 before_install:
+  - if [ "${TRAVIS_OS_NAME}" = "linux" ]; then export DISPLAY=:99.0; sh -e /etc/init.d/xvfb start; fi
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
   - if [ $TRAVIS_OS_NAME = "linux" ]; then
       bash .travis/amd_sdk.sh;
