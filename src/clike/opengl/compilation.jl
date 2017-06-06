@@ -27,27 +27,26 @@ include("rewriting.jl")
 
 
 
-#_to_gl_types{T}(::Type{T}) = T
-_to_gl_types{T}(::T) = T
-_to_gl_types{T}(::Type{T}) = Type{T}
-_to_gl_types(::Int64) = Int32
-_to_gl_types(::Float64) = Float32
+#to_gl_types{T}(::Type{T}) = T
+to_gl_types{T}(::T) = to_gl_types(T)
+to_gl_types{T}(::Type{T}) = T
+to_gl_types{T}(::Type{Type{T}}) = Type{T}
+to_gl_types(::Type{Int64}) = Int32
+to_gl_types(::Type{Float64}) = Float32
 
-function _to_gl_types{T <: Union{GLBuffer, Texture}}(arg::T)
-    return gli.CLArray{eltype(arg), ndims(arg)}
+function to_gl_types{T <: Union{GLBuffer, Texture}}(arg::Type{T})
+    return gli.GLTexture{eltype(arg), ndims(arg)}
 end
-function to_gl_types(args::Union{Vector, Tuple})
-    map(_to_gl_types, args)
+function to_gl_types{T <: Union{GLBuffer, Texture}}(arg::Type{T})
+    return gli.GLArray{eltype(arg), ndims(arg)}
 end
-
-
 
 function gl_convert{T}(x::T)
     # empty objects are empty and are only usable for dispatch
     isbits(x) && sizeof(x) == 0 && nfields(x) == 0 && return EmptyStruct()
     # same applies for types
     isa(x, Type) && return EmptyStruct()
-    convert(_to_gl_types(x), x)
+    convert(to_gl_types(x), x)
 end
 
 const gl_compiled_functions = Dict{Any, GLFunction}()
@@ -58,7 +57,7 @@ function gl_empty_compile_cache!()
 end
 
 function GLFunction{T}(f::Function, args::T, window)
-    gltypes = to_gl_types(args)
+    gltypes = to_gl_types.(args)
     get!(gl_compiled_functions, (f, gltypes)) do # TODO make this faster
         decl = GLFunction((f, gltypes))
         funcsource = getsource!(decl)
