@@ -122,6 +122,12 @@ function rewrite_function{F}(li::CLMethod, f::F, types::ANY, expr)
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = pow
         return expr
+    elseif f == abs && length(types) == 1 && all(t-> t <: cli.Floats, types)
+        expr.args[1] = fabs
+        return expr
+    elseif f == muladd && length(types) == 3 && all(t-> t <: cli.Floats, types)
+        expr.args[1] = fma
+        return expr
     # Constructors
     elseif F <: Type
         realtype = Sugar.expr_type(li, expr)
