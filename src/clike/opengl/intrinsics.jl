@@ -13,7 +13,6 @@ immutable GLArray{T, N} <: AbstractArray{T, N} end
 immutable GLTexture{T, N} <: AbstractArray{T, N} end
 
 const GLDeviceArray = Union{GLArray, GLTexture}
-
 const Types = Union{vecs..., numbers..., GLArray, GLTexture}
 const Functions = Union{map(typeof, functions)...}
 
@@ -193,5 +192,29 @@ function Base.setindex!{T}(x::gli.GLArray{T, 1}, val::NTuple{4, T}, i::Integer)
     gli.imageStore(x, i, val)
 end
 
+function gl_erf{T <: AbstractFloat}(x::T)
+    # constants
+    a1 =  T(0.254829592)
+    a2 = T(-0.284496736)
+    a3 =  T(1.421413741)
+    a4 = T(-1.453152027)
+    a5 =  T(1.061405429)
+    p  =  T(0.3275911)
 
-GLTexture
+    # Save the sign of x
+    sign = 1
+    if (x < 0)
+        sign = -1
+    end
+    xabs = abs(x)
+    # A&S formula 7.1.26
+    t = T(1.0) / (T(1.0) + p * xabs)
+    y = T(1.0) - (((((a5*t + a4)*t) + a3)*t + a2)*t + a1)*t*exp(-xabs*xabs)
+
+    return sign * y
+end
+gl_erfc{T <: AbstractFloat}(x::T) = T(1.0) - gl_erf(x)
+
+# FMA is only supported in opengl >= 4.0 . To keep it simple, we just use this fallback for now
+# until we propagate opengl versions and emit code accordingly
+gl_fma{T <: AbstractFloat}(a::T, b::T, c::T) = a * b + c

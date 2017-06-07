@@ -131,20 +131,8 @@ function show_unquoted(io::GLIO, ex::Expr, indent::Int, prec::Int)
         else
             # TODO handle getfield
             func_prec = operator_precedence(fname)
-            # scalar multiplication (i.e. "100x")
-            if (
-                    fname === :* &&
-                    length(func_args) == 2 && isa(func_args[1], Real) &&
-                    isa(func_args[2], Symbol)
-                )
-                if func_prec <= prec
-                    show_enclosed_list(io, '(', func_args, "", ')', indent, func_prec)
-                else
-                    show_list(io, func_args, "", indent, func_prec)
-                end
-
             # unary operator (i.e. "!z")
-            elseif fname in uni_ops && length(func_args) == 1
+            if fname in uni_ops && length(func_args) == 1
                 print(io, fname)
                 if isa(func_args[1], Expr) || func_args[1] in all_ops
                     show_enclosed_list(io, '(', func_args, ",", ')', indent, func_prec)

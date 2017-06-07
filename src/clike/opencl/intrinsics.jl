@@ -49,7 +49,7 @@ barrier(::Cuint) = nothing
 #######################################
 # globals
 
-const Functions = Union{map(typeof, functions)...}
+const Functions = Union{map(typeof, (functions..., erf, erfc))..., }
 
 function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     clintrinsic(f, Sugar.to_tuple(types))

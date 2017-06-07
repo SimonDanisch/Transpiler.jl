@@ -34,10 +34,10 @@ to_gl_types{T}(::Type{Type{T}}) = Type{T}
 to_gl_types(::Type{Int64}) = Int32
 to_gl_types(::Type{Float64}) = Float32
 
-function to_gl_types{T <: Union{GLBuffer, Texture}}(arg::Type{T})
+function to_gl_types{T <: Texture}(arg::Type{T})
     return gli.GLTexture{eltype(arg), ndims(arg)}
 end
-function to_gl_types{T <: Union{GLBuffer, Texture}}(arg::Type{T})
+function to_gl_types{T <: GLBuffer}(arg::Type{T})
     return gli.GLArray{eltype(arg), ndims(arg)}
 end
 

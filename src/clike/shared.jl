@@ -71,7 +71,7 @@ fabs(x::AbstractFloat) = abs(x)
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
     sin, tan, sqrt, cos, mod, floor, fract, log, atan2, max, min,
-    abs, pow, log10, exp, erf, erfc, normalize, cross, dot, smoothstep, mix, norm,
+    abs, pow, log10, exp, normalize, cross, dot, smoothstep, mix, norm,
     length, clamp, cospi, sinpi, asin, fma, fabs
 )
 
