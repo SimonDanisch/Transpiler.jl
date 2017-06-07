@@ -289,8 +289,8 @@ function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)
 end
 
 function c_fieldname(T, i)
-    try
-        name = Base.fieldname(T, i)
+    name = try
+        Base.fieldname(T, i)
     catch e
         error("couldn't get field name for $T")
     end

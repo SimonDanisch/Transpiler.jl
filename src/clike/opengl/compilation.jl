@@ -1,4 +1,3 @@
-
 import Sugar: LazyMethod, supports_overloading, expr_type
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic
 import Sugar: typename, functionname, show_name, show_type, show_function
@@ -93,21 +92,8 @@ function GLFunction{T}(f::Function, args::T, window)
     end::GLFunction{T}
 end
 
-# function GLFunction{T}(source_name::Tuple{String, Symbol}, args::T, queue)
-#     kernelsource, funcname = source_name
-#     ctx = cl.context(queue)
-#     p = cl.build!(
-#         cl.Program(ctx, source = kernelsource),
-#         options = "-cl-denorms-are-zero -cl-mad-enable -cl-unsafe-math-optimizations"
-#     )
-#     k = cl.Kernel(p, string(funcname))
-#     GLFunction{T}(k, queue, Nullable{GLFunction}(), kernelsource)
-# end
-
-
 
 useprogram(p::GLFunction) = glUseProgram(p.program.id)
-
 
 function (p::GLFunction{Args}){Args}(args::Args, size::NTuple{3})
     useprogram(p)
