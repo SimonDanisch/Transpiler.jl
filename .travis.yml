@@ -20,7 +20,6 @@ addons:
 
 before_install:
 
-  - if [ "${TRAVIS_OS_NAME}" = "linux" ];
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
   - if [ $TRAVIS_OS_NAME = "linux" ]; then
 
