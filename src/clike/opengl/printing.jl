@@ -671,7 +671,6 @@ function emit_geometry_shader(
         primitive_out = :triangle_strip
     )
     emitfunctype = first(arguments)
-    @show emitfunctype
     emitfunc = Sugar.instance(emitfunctype)
     geom_inT = arguments[2]
     tup_geom = if primitive_in == :points
@@ -710,6 +709,7 @@ function emit_geometry_shader(
     funcs = filter(Sugar.isfunction, deps)
     println(io, "// dependant type declarations")
     for typ in types
+        println(typ.signature)
         if !Sugar.isintrinsic(typ) && !(tup_geom == typ.signature)
             println(io, Sugar.getsource!(typ))
         end
@@ -754,6 +754,5 @@ function emit_geometry_shader(
     unshift!(src_ast.args, :($emitname::$emitfunctype))
     Base.show_unquoted(io, src_ast, 0, 0)
     src = take!(io.io)
-    write(STDOUT, src)
     src, geometry_outT
 end

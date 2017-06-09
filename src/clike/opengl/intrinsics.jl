@@ -122,6 +122,7 @@ function gli.glintrinsic{T}(x::Type{T})
     T <: gli.Types ||
     is_fixedsize_array(T) ||
     T <: Tuple{Numbers} ||
+    (T <: NTuple{1} && is_fixedsize_array(eltype(T))) ||
     (T <: SMatrix && all(x-> x <= 4, size(T))) ||
     T <: uchar # uchar in ints makes 0.6 segfault -.-
 end
