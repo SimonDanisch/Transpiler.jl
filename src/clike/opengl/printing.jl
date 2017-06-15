@@ -125,7 +125,9 @@ function show_unquoted(io::GLIO, ex::Expr, indent::Int, prec::Int)
         func_arg_types = map(x->expr_type(io.method, x), func_args)
         fname = Symbol(functionname(io, f, func_arg_types))
         if fname == :getfield && nargs == 3
+            print(io, '(')
             show_unquoted(io, args[2], indent) # type to be accessed
+            print(io, ')')
             print(io, '.')
             show_unquoted(io, args[3], indent)
         else
@@ -408,7 +410,7 @@ function show_interface_block(
     println(io, array_expr,";\n};")
 end
 
-function print_dependencies(io, m; funcio = io, typio = io)
+function print_dependencies(io, m; filterfun = (m)-> true, funcio = io, typio = io)
     # dependencies
     deps = Sugar.dependencies!(m, true)
     deps = reverse(collect(deps))
@@ -416,13 +418,13 @@ function print_dependencies(io, m; funcio = io, typio = io)
     funcs = filter(Sugar.isfunction, deps)
     println(typio, "// dependant type declarations")
     for typ in types
-        if !Sugar.isintrinsic(typ)
+        if !Sugar.isintrinsic(typ) && filterfun(typ)
             println(typio, Sugar.getsource!(typ))
         end
     end
     println(funcio, "// dependant function declarations")
     for func in funcs
-        if !Sugar.isintrinsic(func)
+        if !Sugar.isintrinsic(func) && filterfun(func)
             println(funcio, Sugar.getsource!(func))
         end
     end
@@ -480,7 +482,11 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     # TODO glsl version string?!
     println(io, "#version 330")
 
-    print_dependencies(io, m)
+    print_dependencies(io, m, filterfun = m -> begin
+        # return type will get removed if its a tuple
+        RT <: Tuple || return true
+        !(Sugar.istype(m) && m.signature == RT)
+    end)
 
     # Vertex in block
     println(io, "// vertex input:")
@@ -673,10 +679,10 @@ function emit_geometry_shader(
     emitfunctype = first(arguments)
     emitfunc = Sugar.instance(emitfunctype)
     geom_inT = arguments[2]
-    tup_geom = if primitive_in == :points
-        Tuple{geom_inT}
+    tup_geom, geom_length = if primitive_in == :points
+        Tuple{geom_inT}, 1
     elseif primitive_in == :lines
-        NTuple{2, geom_inT}
+        NTuple{2, geom_inT}, 2
     end
     # for type inference, geom in needs to be a tuple, while when we work with it, it's just the type itself
     m = GEOMMethod((shader, Tuple{arguments[1], tup_geom, arguments[3:end]...}))
@@ -730,7 +736,7 @@ function emit_geometry_shader(
     !(first(emit_args)[1] <: Vec4f0) && error(usage)
     geometry_outT = emit_arg1[2]
 
-    show_varying(io, geom_inT, geom_in_name, qualifier = :in, array = 0)
+    show_varying(io, geom_inT, geom_in_name, qualifier = :in, array = geom_length)
     show_varying(io, geometry_outT, geom_out_name, qualifier = :out)
 
     # uniform block
@@ -744,7 +750,10 @@ function emit_geometry_shader(
     println(io, "void main()")
     src_ast = Sugar.rewrite_ast(m, ast)
     x = pop!(src_ast.args)
-    if !isa(x, Expr) && x.head != :return
+    # TODO better check
+    if isa(x, Expr) && x.head == :return && !isempty(x.args)
+        error("You're not supposed to return anything from GeometryShader. Make sure to include an empty return statement!")
+    elseif isa(x, Expr) && x.head != :return
         # TODO Julia should always insert a return in the end? It might be allowed
         # to have a line number or nothing in the end... Not sure!
         error("internal error: Expr should have contained return. Found: $x")

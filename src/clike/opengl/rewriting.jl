@@ -23,7 +23,6 @@ function replace_slots_exctract_function(m, expr, slot2replace)
         end
         return false, expr
     end
-    println("list : ", list)
     list[1], used_functions
 end
 
@@ -171,6 +170,8 @@ function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
                     return ret
                 else
                     # Will need some dynamic field lookup!
+                    expr.args[1] = f
+                    return expr
                     error(
                         "Only static getindex into composed types allowed for now!
                         Found: $T with $(types[2:end])"

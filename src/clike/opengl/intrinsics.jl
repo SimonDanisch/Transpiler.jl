@@ -69,9 +69,20 @@ texelFetch{T}(x::GLTexture{T, 2}, i::NTuple{2, int}, lod::int) = ret(NTuple{4, T
 
 texture{T}(x::GLTexture{T, 1}, i::Float32) = ret(NTuple{4, T})
 texture{T}(x::GLTexture{T, 2}, i::Vec2f0) = ret(NTuple{4, T})
+texture{T}(x::GLTexture{T, 3}, i::Vec3f0) = ret(NTuple{4, T})
 
 imageSize{T, N}(x::GLArray{T, N}) = ret(NTuple{N, int})
 textureSize{T, N}(::GLTexture{T, N}) = ret(NTuple{N, int})
+
+
+"""
+Gradient in x direction
+This is sadly a bit hard to implement for a pure CPU versions, since it's pretty much backed into the GPU hardware.
+How it seems to work is, that it takes the values from neighboring registers, which work in parallel on the pixels
+of the triangle, so they actually do hold the neighboring values needed to calculate the gradient.
+"""
+dFdx{T}(value::T) = T(0.001) # just default to a small gradient if it's called on the CPU
+dFdy{T}(value::T) = T(0.001) # just default to a small gradient if it's called on the CPU
 
 
 EmitVertex() = nothing
@@ -169,6 +180,7 @@ getindex{T}(x::gli.GLTexture{T, 1}, i::Integer, j::Integer) = gli.texelFetch(x, 
 getindex{T}(x::gli.GLTexture{T, 1}, i::AbstractFloat) = gli.texture(x, i)
 getindex{T}(x::gli.GLTexture{T, 2}, i::AbstractFloat, j::AbstractFloat) = gli.texture(x, Vec2f0(i, j))
 getindex{T}(x::gli.GLTexture{T, 2}, idx::Vec2f0) = gli.texture(x, idx)
+getindex{T}(x::gli.GLTexture{T, 3}, idx::Vec3f0) = gli.texture(x, idx)
 
 getindex{T}(x::gli.GLArray{T, 1}, i::Integer) = gli.imageLoad(x, i)
 function Base.getindex{T}(x::gli.GLArray{T, 2}, i::Integer, j::Integer)
