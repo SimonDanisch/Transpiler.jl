@@ -18,10 +18,10 @@ end
 # Abstract types
 # for now we use Int, more accurate would be Int32. But to make things simpler
 # we rewrite Int to Int32 implicitely like this!
-const int = Int
+const int = Int32
 # same goes for float
 const float = Float64
-const uint = UInt
+const uint = UInt32
 const uchar = UInt8
 
 const ints = (int, Int32, uint, Int64)
@@ -70,7 +70,7 @@ fabs(x::AbstractFloat) = abs(x)
 # globals
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
-    sin, tan, sqrt, cos, mod, floor, fract, log, atan2, max, min,
+    sin, tan, sqrt, cos, mod, round, floor, fract, log, atan2, atan, max, min,
     abs, pow, log10, exp, normalize, cross, dot, smoothstep, mix, norm,
     length, clamp, cospi, sinpi, asin, fma, fabs
 )
@@ -145,7 +145,7 @@ function _typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
     elseif (N in vector_lengths) && T <: Number # TODO look up numbers again!
         Sugar.vecname(io, t)
     else
-        string(typename(io, T), '[', N, ']')
+        string("__constant ", typename(io, T), " * ")
     end
 end
 
@@ -243,30 +243,25 @@ let hash_dict = Dict{Any, Int}(), counter = 0
     end
 end
 
-function functionname(io::CIO, f, types)
-    if isa(f, Type) || isa(f, Expr)
+function functionname(io::IO, method::LazyMethod)
+    if istype(method)
         # This should only happen, if the function is actually a type
-        if isa(f, Expr)
-            f = f.typ
-        end
-
-        return string('(', _typename(io, f), ')')
+        return string('(', _typename(io, method.signature), ')')
     end
-    method = try
-        LazyMethod(io.method, f, types)
-    catch e
-        error("Couldn't create function $f with $types")
-    end
-    f_sym = Symbol(typeof(f).name.mt.name)
+    f_sym = Symbol(typeof(Sugar.getfunction(method)).name.mt.name)
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
     end
-    str = if supports_overloading(io)
+    str = if isa(io, Sugar.ASTIO) && supports_overloading(io)
         string(f_sym)
     else
-        string(f_sym, '_', signature_hash(types))
+        string(f_sym, '_', signature_hash(method.signature[2]))
     end
-    symbol_hygiene(io, str)
+    if isa(io, Sugar.ASTIO)
+        symbol_hygiene(io, str)
+    else
+        str
+    end
 end
 
 function show_name(io::CIO, x)
@@ -279,9 +274,6 @@ end
 
 function show_type(io::CIO, x)
     print(io, typename(io, x))
-end
-function show_function(io::CIO, f, types)
-    print(io, functionname(io, f, types))
 end
 
 function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)

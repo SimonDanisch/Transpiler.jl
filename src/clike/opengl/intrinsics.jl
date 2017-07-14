@@ -88,7 +88,8 @@ dFdy{T}(value::T) = T(0.001) # just default to a small gradient if it's called o
 EmitVertex() = nothing
 EndPrimitive() = nothing
 
-const gl_GlobalInvocationID = (0, 0, 0)
+const gl_GlobalInvocationID = Vec3f0(0, 0, 0)
+const gl_FragCoord = Vec4f0(0, 0, 0, 0)
 
 function glintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     glintrinsic(f, Sugar.to_tuple(types))
@@ -170,6 +171,7 @@ glintrinsic(f::typeof(tuple), types::Tuple) = true
 import Base: getindex, setindex!, size
 
 GlobalInvocationID() = gli.gl_GlobalInvocationID
+FragCoord() = gli.gl_FragCoord
 
 size{T, N}(x::gli.GLArray{T, N}) = gli.imageSize(x)
 size{T, N}(x::gli.GLTexture{T, N}) = gli.textureSize(x)

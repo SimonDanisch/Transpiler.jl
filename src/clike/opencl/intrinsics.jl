@@ -37,11 +37,11 @@ end
 
 
 # TODO I think this needs to be UInt, but is annoying to work with!
-get_global_id(dim::int) = ret(int)
-get_local_id(dim::int) = ret(int)
-get_group_id(dim::int) = ret(int)
-get_local_size(dim::int) = ret(int)
-get_global_size(dim::int) = ret(int)
+get_global_id(dim::Union{int, Int}) = ret(int)
+get_local_id(dim::Union{int, Int}) = ret(int)
+get_group_id(dim::Union{int, Int}) = ret(int)
+get_local_size(dim::Union{int, Int}) = ret(int)
+get_global_size(dim::Union{int, Int}) = ret(int)
 
 
 const CLK_LOCAL_MEM_FENCE = Cuint(0)
@@ -98,11 +98,16 @@ function cli.clintrinsic{T}(x::Type{T})
     T <: cli.uchar # uchar in ints makes 0.6 segfault -.-
 end
 function isintrinsic(x::CLMethod)
-    if isfunction(x)
-        isintrinsic(Sugar.getfunction(x)) ||
-        cli.clintrinsic(x.signature...)
-    else
-        cli.clintrinsic(x.signature)
+    try
+        if isfunction(x)
+            isintrinsic(Sugar.getfunction(x)) ||
+            cli.clintrinsic(x.signature[1], Sugar.to_tuple(x.signature[2]))
+        else
+            cli.clintrinsic(x.signature)
+        end
+    catch e
+        println(x.signature)
+        rethrow(e)
     end
 end
 
@@ -120,7 +125,7 @@ function clintrinsic{N, T, I <: Integer}(
     return true
 end
 
-function clintrinsic{T, I <: cli.Ints}(
+function clintrinsic{T, I <: Integer}(
         f::typeof(getindex), types::Type{Tuple{T, I}}
     )
     return is_fixedsize_array(T)
@@ -147,12 +152,7 @@ end
 function Base.getindex{T, N}(a::CLArray{T, N}, i::Integer)
     cli.ret(T)
 end
-function Base.getindex{T}(a::CLArray{T, 2}, i1::Integer, i2::Integer)
-    cli.ret(T)
-end
-function Base.getindex{T}(a::CLArray{T, 3}, i1::Integer, i2::Integer, i3::Integer)
-    cli.ret(T)
-end
+
 function Base.setindex!{T}(::cli.LocalMemory{T}, ::T, ::Integer)
     nothing
 end
@@ -185,6 +185,8 @@ for N in cli.vector_lengths
     end
 end
 
+
+
 # TODO Clean up this ugly mess of determining what functions not need to be compiled
 # (called intrinsics here). Best would be a cl_import macro!
 # Problems are, that they either need to define a function stub for Inference
@@ -194,4 +196,30 @@ end
 macro cl_pirate(func)
 end
 macro cl_import(func)
+end
+
+function gpu_ind2sub{T}(dims, ind::T)
+    Base.@_inline_meta
+    _ind2sub(dims, ind - T(1))
+end
+
+_ind2sub{T}(::Tuple{}, ind::T) = (ind + T(1),)
+function _ind2sub{T}(indslast::NTuple{1}, ind::T)
+    Base.@_inline_meta
+    ((ind + T(1)),)
+end
+function _ind2sub{T}(inds, ind::T)
+    Base.@_inline_meta
+    r1 = inds[1]
+    indnext = div(ind, r1)
+    f = T(1); l = r1
+    (ind-l*indnext+f, _ind2sub(Base.tail(inds), indnext)...)
+end
+
+
+function Base.getindex{T}(a::CLArray{T, 2}, i1::Integer, i2::Integer)
+    cli.ret(T)
+end
+function Base.getindex{T}(a::CLArray{T, 3}, i1::Integer, i2::Integer, i3::Integer)
+    cli.ret(T)
 end

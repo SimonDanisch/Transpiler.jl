@@ -28,6 +28,16 @@ end
 function show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
 end
+function show_unquoted(io::IO, x::LazyMethod, ::Int, ::Int)
+    if isfunction(x)
+        print(io, functionname(io, x))
+    else
+        print(io, typename(io, x.signature))
+    end
+end
+function show_unquoted(io::CLIO, ssa::SSAValue, ::Int, ::Int)
+    print(io, Sugar.ssavalue_name(ssa))
+end
 
 function show_unquoted(io::CLIO, ex::GlobalRef, ::Int, ::Int)
     # TODO disregarding modules doesn't seem to be a good idea.
@@ -43,8 +53,12 @@ function show_call(io::CLIO, head, func, func_args, indent)
     op, cl = expr_calls[head]
     if head == :ref
         show_unquoted(io, func, indent)
+        if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
+            # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
+            return
+        end
     else
-        show_function(io, func, map(x->expr_type(io.method, x), func_args))
+        show_unquoted(io, func, indent, -1)
     end
     if head == :(.)
         print(io, '.')
@@ -58,12 +72,10 @@ function show_call(io::CLIO, head, func, func_args, indent)
     else
         show_enclosed_list(io, op, func_args, ", ", cl, indent)
     end
+    return
 end
 
 
-function Base.show_unquoted(io::CLIO, ssa::SSAValue, ::Int, ::Int)
-    print(io, Sugar.ssavalue_name(ssa))
-end
 
 # show a block, e g if/for/etc
 function show_block(io::CLIO, head, args::Vector, body, indent::Int)
@@ -121,8 +133,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
     elseif head === :call && nargs >= 1
         f = first(args)
         func_args = args[2:end]
-        func_arg_types = map(x->expr_type(io.method, x), func_args)
-        fname = Symbol(functionname(io, f, func_arg_types))
+        fname = Symbol(functionname(io, f))
         if fname == :getfield && nargs == 3
             show_unquoted(io, args[2], indent) # type to be accessed
             print(io, '.')
@@ -155,7 +166,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
             elseif func_prec > 0 # is a binary operator
                 na = length(func_args)
                 if (na == 2 || (na > 2 && fname in (:+, :++, :*))) && all(!isa(a, Expr) || a.head !== :... for a in func_args)
-                    sep = " $f "
+                    sep = " $fname "
                     if func_prec <= prec
                         show_enclosed_list(io, '(', func_args, sep, ')', indent, func_prec, true)
                     else
@@ -279,8 +290,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         show_unquoted(io, a1)
         parens && print(io, ")")
 
-
-
     elseif (head === :return)
         if length(args) == 1
             # return Void must not return anything in GLSL
@@ -293,8 +302,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         else
             error("What dis return? $ex")
         end
-    elseif head == :inbounds # ignore
-    elseif (head === :meta)
+    elseif (head in (:meta, :inbounds))
         # TODO, just ignore this? Log this? We definitely don't need it in GLSL
     else
         println(ex)
@@ -305,31 +313,36 @@ end
 
 
 function Sugar.getfuncheader!(x::CLMethod)
-    if !isdefined(x, :funcheader)
-        x.funcheader = if Sugar.isfunction(x)
-            sprint() do io
-                args = Sugar.getfuncargs(x)
-                glio = CLIO(io, x)
-                show_type(glio, Sugar.returntype(x))
-                print(glio, ' ')
-                show_function(glio, x.signature...)
-                print(glio, '(')
-                for (i, elem) in enumerate(args)
-                    if i != 1
-                        print(glio, ", ")
-                    end
-                    name, T = elem.args
-                    show_type(glio, T)
+    try
+        if !isdefined(x, :funcheader)
+            x.funcheader = if Sugar.isfunction(x)
+                sprint() do io
+                    args = Sugar.getfuncargs(x)
+                    glio = CLIO(io, x)
+                    show_type(glio, Sugar.returntype(x))
                     print(glio, ' ')
-                    show_name(glio, name)
+                    show_unquoted(glio, x)
+                    print(glio, '(')
+                    for (i, elem) in enumerate(args)
+                        if i != 1
+                            print(glio, ", ")
+                        end
+                        name, T = elem.args
+                        show_type(glio, T)
+                        print(glio, ' ')
+                        show_name(glio, name)
+                    end
+                    print(glio, ')')
                 end
-                print(glio, ')')
+            else
+                ""
             end
-        else
-            ""
         end
+        x.funcheader
+    catch e
+        Sugar.print_stack_trace(STDERR, x)
+        rethrow(e)
     end
-    x.funcheader
 end
 
 function Sugar.getfuncsource(x::CLMethod)
@@ -341,8 +354,15 @@ end
 
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
+    if is_ntuple(T)
+        return ""
+        # this is basically an intrinsic TODO should this be part of isintrinsic?
+        # etm = CLMethod(eltype(T))
+        # isintrinsic(etm) &&
+        # return Sugar.gettypesource(etm)
+    end
     tname = typename(EmptyCLIO(), T)
-    sprint() do io
+    str = sprint() do io
         print(io, "typedef struct {\n")
         nf = nfields(T)
         fields = []
@@ -361,4 +381,5 @@ function Sugar.gettypesource(x::CLMethod)
         end
         println(io, "}$tname;")
     end
+    return str
 end

@@ -73,12 +73,14 @@ function CLFunction{T}(f::Function, args::T, queue)
         println(io, "// dependant type declarations")
         for typ in types
             if !isintrinsic(typ)
+                println(io, "// ", typ.signature)
                 println(io, getsource!(typ))
             end
         end
         println(io, "// dependant function declarations")
         for func in funcs
             if !isintrinsic(func)
+                println(io, "// ", func.signature)
                 println(io, getsource!(func))
             end
         end
@@ -87,6 +89,7 @@ function CLFunction{T}(f::Function, args::T, queue)
         print(io, "__kernel ") # mark as kernel function
         println(io, funcsource)
         kernelsource = String(take!(io.io))
+        println(kernelsource)
         p = cl.build!(
             cl.Program(ctx, source = kernelsource),
             options = "-cl-denorms-are-zero -cl-mad-enable -cl-unsafe-math-optimizations"

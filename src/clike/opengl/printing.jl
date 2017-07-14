@@ -612,7 +612,7 @@ function emit_fragment_shader(shader, arguments)
     println(io, "void main()")
     src_ast = Sugar.rewrite_ast(m, ast)
     Base.show_unquoted(io, src_ast, 0, 0)
-    take!(io.io), ret_types
+    take!(io.io), ret_types, Sugar.slotnames(m)[3:Sugar.method_nargs(m)]
 end
 
 
@@ -715,7 +715,6 @@ function emit_geometry_shader(
     funcs = filter(Sugar.isfunction, deps)
     println(io, "// dependant type declarations")
     for typ in types
-        println(typ.signature)
         if !Sugar.isintrinsic(typ) && !(tup_geom == typ.signature)
             println(io, Sugar.getsource!(typ))
         end
@@ -724,7 +723,6 @@ function emit_geometry_shader(
     io2 = GLIO(IOBuffer(), m)
     for func in funcs
         if !Sugar.isintrinsic(func) && !(Sugar.getfunction(func) == emitfunc)
-            println("      ", func.signature)
             println(io2, Sugar.getsource!(func))
         end
     end
