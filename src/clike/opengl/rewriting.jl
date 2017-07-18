@@ -116,7 +116,7 @@ function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
             # Indexing with e.g. Vec(1,2)
             if (length(types) == 2 &&
                     is_fixedsize_array(types[2]) && (eltype(types[2]) <: Integer) &&
-                    (is_ntuple(T) || is_fixedsize_array(T)))
+                    is_fixedsize_array(T))
                 idx = expr.args[3].args[2:end]
 
                 idxsym = Symbol(join(map(idx) do idx
@@ -130,7 +130,7 @@ function rewrite_function{F}(m::GLMethods, f::F, types::ANY, expr)
                 return ret
             # homogenous tuples, translated to static array
             elseif (length(types) == 2 && types[2] <: Integer) &&
-                    (is_ntuple(T) || is_fixedsize_array(T))
+                    is_fixedsize_array(T)
 
                 N = fixed_array_length(T)
                 ET = eltype(T)

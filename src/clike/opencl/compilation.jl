@@ -59,44 +59,46 @@ function cl_empty_compile_cache!()
     return
 end
 
+
+function print_dependencies(io, method, visited = Set())
+    (method in visited) && return
+    push!(visited, method)
+    for elem in dependencies!(method)
+        print_dependencies(io, elem, visited)
+    end
+    isintrinsic(method) && return
+    println(io, "// ", method.signature)
+    println(io, getsource!(method))
+end
+
 function CLFunction{T}(f::Function, args::T, queue)
     ctx = cl.context(queue)
     gltypes = to_cl_types(args)
     get!(cl_compiled_functions, (f, gltypes)) do # TODO make this faster
-        decl = CLMethod((f, gltypes))
-        funcsource = getsource!(decl)
+        method = CLMethod((f, gltypes))
+        funcsource = getsource!(method)
         # add compute program dependant infos
-        io = CLIO(IOBuffer(), decl)
-        deps = reverse(collect(dependencies!(decl, true)))
-        types = filter(istype, deps)
-        funcs = filter(isfunction, deps)
-        println(io, "// dependant type declarations")
-        for typ in types
-            if !isintrinsic(typ)
-                println(io, "// ", typ.signature)
-                println(io, getsource!(typ))
-            end
-        end
-        println(io, "// dependant function declarations")
-        for func in funcs
-            if !isintrinsic(func)
-                println(io, "// ", func.signature)
-                println(io, getsource!(func))
-            end
+        io = CLIO(IOBuffer(), method)
+
+        println(io, "// dependencies")
+        visited = Set()
+        for dep in dependencies!(method)
+            print_dependencies(io, dep, visited) # this is recursive but would print method itself
         end
 
+        println(io, "// ########################")
         println(io, "// Main inner function")
+        println(io, "// ", method.signature)
         print(io, "__kernel ") # mark as kernel function
         println(io, funcsource)
         kernelsource = String(take!(io.io))
-        println(kernelsource)
         p = cl.build!(
             cl.Program(ctx, source = kernelsource),
             options = "-cl-denorms-are-zero -cl-mad-enable -cl-unsafe-math-optimizations"
         )
-        fname = string(functionname(io, decl.signature...))
+        fname = string(functionname(io, method))
         k = cl.Kernel(p, fname)
-        CLFunction{T}(k, queue, decl, kernelsource)
+        CLFunction{T}(k, queue, method, kernelsource)
     end::CLFunction{T}
 end
 

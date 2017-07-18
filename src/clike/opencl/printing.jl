@@ -51,15 +51,18 @@ end
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
 function show_call(io::CLIO, head, func, func_args, indent)
     op, cl = expr_calls[head]
+    print(io, '(')
     if head == :ref
         show_unquoted(io, func, indent)
         if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
             # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
+            print(io, ')')
             return
         end
     else
         show_unquoted(io, func, indent, -1)
     end
+    print(io, ')')
     if head == :(.)
         print(io, '.')
     end
@@ -354,13 +357,6 @@ end
 
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
-    if is_ntuple(T)
-        return ""
-        # this is basically an intrinsic TODO should this be part of isintrinsic?
-        # etm = CLMethod(eltype(T))
-        # isintrinsic(etm) &&
-        # return Sugar.gettypesource(etm)
-    end
     tname = typename(EmptyCLIO(), T)
     str = sprint() do io
         print(io, "typedef struct {\n")

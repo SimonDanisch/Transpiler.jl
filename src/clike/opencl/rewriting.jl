@@ -18,12 +18,12 @@ function getindex_replace(m, expr, _types)
     if !isempty(types)
         T = types[1]
         # homogenous tuples, translated to static array
-        if (length(types) == 2 && types[2] <: Integer) && (cli.is_ntuple(T) || cli.is_fixedsize_array(T))
+        if (length(types) == 2 && types[2] <: Integer) && cli.is_fixedsize_array(T)
             N = cli.fixed_array_length(T)
             ET = eltype(T)
-            # if N == 1 && ET <: cli.Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
-                # return false, expr
-            # end
+            if N == 1 && ET <: cli.Numbers # Since OpenCL is really annoying we treat Tuple{T<:Number} as numbers
+                return false, expr
+            end
             # todo replace static indices
             idx = expr.args[3]
             if cli.is_fixedsize_array(T)
@@ -54,6 +54,8 @@ function getindex_replace(m, expr, _types)
             end
             ret = typed_expr(expr.typ, :ref, expr.args[2], idx_expr)
             return true, ret
+        elseif types[1] <: Tuple{X} where X <: cli.Numbers
+            return true, Sugar.rewrite_ast(m, expr.args[2]) # don't index, tuples of length 1 get mapped to the primitive itself -.-
         else
             idx = expr.args[3]
             idx_expr = if isa(idx, Integer)
@@ -61,6 +63,7 @@ function getindex_replace(m, expr, _types)
                 name = Symbol(c_fieldname(T, idx))
             else
                 # Will need some dynamic field lookup!
+                Sugar.print_stack_trace(STDERR, m)
                 error(
                     "Only static getindex into composed types allowed for now!
                     Found: $T with $(types[2:end])"
@@ -93,9 +96,6 @@ function rewrite_function(method::CLMethod, expr)
             expr.args[1] = LazyMethod(li, fb, types[2:end])
             return expr
         end
-        return expr
-    elseif f == tuple
-        expr.args[1] = LazyMethod(li, expr.typ) # use returntype
         return expr
     elseif f == convert && length(types) == 2
         # BIG TODO, this changes semantic!!!! DONT
@@ -148,10 +148,14 @@ function rewrite_function(method::CLMethod, expr)
         expr.args[1] = LazyMethod(li, fma, types)
         return expr
     # Constructors
-    elseif F <: Type
+    elseif F <: Type || f == tuple
         realtype = Sugar.expr_type(li, expr)
+        args = expr.args[2:end]
+        if isempty(args) && sizeof(realtype) == 0
+            push!(args, 0f0) # there are no empty types, so if empty, insert default
+        end
         # C/Opencl uses curly braces for constructors
-        ret = typed_expr(realtype, :curly, LazyMethod(li, realtype), expr.args[2:end]...)
+        ret = typed_expr(realtype, :curly, LazyMethod(li, realtype), args...)
         return ret
     elseif F <: Function
         expr.args[1] = method

@@ -2,7 +2,7 @@ module CLIntrinsics
 
 import ..Transpiler: AbstractCLIO, EmptyCLIO
 import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
-import ..Transpiler: fixed_array_length, is_ntuple, is_fixedsize_array, GLMethod
+import ..Transpiler: fixed_array_length, is_fixedsize_array, GLMethod
 import ..Transpiler: AbstractGLIO, ret, vecs, Vecs, vector_lengths, functions
 
 
@@ -55,15 +55,11 @@ function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     clintrinsic(f, Sugar.to_tuple(types))
 end
 function clintrinsic{F <: Function}(f::F, types::Tuple)
-    # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
     if f == broadcast
         BF = types[1]
         if BF <: Functions && all(T-> T <: Types, types[2:end])
             return true
         end
-    end
-    if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
-        return true
     end
     if f == getindex && length(types) == 2 && first(types) <: CLDeviceArray && last(types) <: Integer
         return true
@@ -98,16 +94,12 @@ function cli.clintrinsic{T}(x::Type{T})
     T <: cli.uchar # uchar in ints makes 0.6 segfault -.-
 end
 function isintrinsic(x::CLMethod)
-    try
-        if isfunction(x)
-            isintrinsic(Sugar.getfunction(x)) ||
-            cli.clintrinsic(x.signature[1], Sugar.to_tuple(x.signature[2]))
-        else
-            cli.clintrinsic(x.signature)
-        end
-    catch e
-        println(x.signature)
-        rethrow(e)
+    if isfunction(x)
+        isintrinsic(Sugar.getfunction(x)) ||
+        cli.clintrinsic(x.signature[1], Sugar.to_tuple(x.signature[2])) ||
+        cli.clintrinsic(x.signature[1], x.signature[2])
+    else
+        cli.clintrinsic(x.signature)
     end
 end
 
@@ -115,13 +107,6 @@ end
 
 # Make constructors inbuild for now. TODO, only make default constructors inbuild
 function clintrinsic{T}(f::Type{T}, types::ANY)
-    return true
-end
-
-# homogenous tuples, translated to glsl array
-function clintrinsic{N, T, I <: Integer}(
-        f::typeof(getindex), types::Type{Tuple{NTuple{N, T}, I}}
-    )
     return true
 end
 
@@ -214,12 +199,4 @@ function _ind2sub{T}(inds, ind::T)
     indnext = div(ind, r1)
     f = T(1); l = r1
     (ind-l*indnext+f, _ind2sub(Base.tail(inds), indnext)...)
-end
-
-
-function Base.getindex{T}(a::CLArray{T, 2}, i1::Integer, i2::Integer)
-    cli.ret(T)
-end
-function Base.getindex{T}(a::CLArray{T, 3}, i1::Integer, i2::Integer, i3::Integer)
-    cli.ret(T)
 end

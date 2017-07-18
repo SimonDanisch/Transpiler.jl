@@ -110,6 +110,7 @@ let _unsupported_id = 0
     end
 end
 
+is_supported_char(io::IO, char) = true
 function is_supported_char(io::CIO, char)
     # Lets just assume for simplicity, that only ascii non operators are supported
     # in a name
@@ -118,7 +119,7 @@ function is_supported_char(io::CIO, char)
     !(char in ('.', '#', '(', ')', ','))  # some ascii codes are not allowed
 end
 
-function symbol_hygiene(io::CIO, sym)
+function symbol_hygiene(io::IO, sym)
     # TODO figure out what other things are not allowed
     # TODO startswith gl_, but allow variables that are actually valid inbuilds
     res_io = IOBuffer()
@@ -133,63 +134,55 @@ function symbol_hygiene(io::CIO, sym)
     String(take!(res_io))
 end
 
-typename(io::CIO, x) = Symbol(symbol_hygiene(io, _typename(io, x)))
+typename(io::IO, x) = Symbol(symbol_hygiene(io, _typename(io, x)))
 
-# don't do hygiene
-typename{N, T}(io::CIO, t::Type{NTuple{N, T}}) = _typename(io, t)
-function _typename{N, T}(io::CIO, t::Type{NTuple{N, T}})
-    # Rewrite rewrite ntuples as glsl arrays
-    # e.g. float[3]
-    if N == 1 && T <: Number
-        return typename(io, T)
-    elseif (N in vector_lengths) && T <: Number # TODO look up numbers again!
-        Sugar.vecname(io, t)
-    else
-        string("__constant ", typename(io, T), " * ")
-    end
-end
 
 const vector_lengths = (2, 3, 4, 8, 16)
 # don't do hygiene
-typename{SV <: StaticVector}(io::CIO, t::Type{SV}) = _typename(io, t)
-function _typename{SV <: StaticVector}(io::CIO, t::Type{SV})
-    N, T = length(SV), eltype(SV)
-    if N == 1 && T <: Number
-        return typename(io, T)
-    elseif (N in vector_lengths) && T <: Number
-        Sugar.vecname(io, t)
-    else
-        string(typename(io, T), '[', N, ']')
-    end
-end
 
-_typename(io::CIO, T::QuoteNode) = _typename(io, T.value)
+_typename(io::IO, T::QuoteNode) = _typename(io, T.value)
+julia_name(x::Type{Type{T}}) where T = string(T)
 
-function _typename(io::CIO, T)
-    str = if isa(T, Expr) && T.head == :curly
-        string(T, "_", join(T.args, "_"))
-    elseif isa(T, Symbol)
-        string(T)
-    elseif isa(T, Tuple)
-        str = "Tuple_"
-        if !isempty(t.parameters)
-            tstr = map(x-> typename(io, x), t.parameters)
-            str *= join(tstr, "_")
-        end
-        str
-    elseif isa(T, Type)
-        str = string(T.name.name)
-        if !isempty(T.parameters)
-            tstr = map(T.parameters) do t
-                if isa(t, DataType)
-                    typename(io, t)
-                else
-                    string(t)
-                end
+function _typename(io::IO, x)
+    str = if isa(x, Expr) && x.head == :curly
+        string(x, "_", join(x.args, "_"))
+    elseif isa(x, Symbol)
+        string(x)
+    elseif isa(x, DataType)
+        T = x
+        if T <: Tuple{X} where X <: Numbers
+            typename(io, eltype(T))
+        elseif is_fixedsize_array(T) # TODO look up numbers again!
+            Sugar.vecname(io, T)
+        elseif T <: Tuple
+            str = "Tuple_"
+            if !isempty(T.parameters)
+                tstr = map(x-> typename(io, x), T.parameters)
+                str *= join(tstr, "_")
             end
-            str *= string("_", join(tstr, "_"))
+            str
+        else
+            str = string(T.name.name)
+            if !isempty(T.parameters)
+                tstr = map(T.parameters) do t
+                    if isa(t, DataType)
+                        typename(io, t)
+                    else
+                        string(t)
+                    end
+                end
+                str *= string("_", join(tstr, "_"))
+            end
+            # TODO we make some types equal (e.g. Tuple{Cint} == Cint or Float32 == Float64)
+            # we either need to change that, or find a cleaner way to get unique names for those
+            if T <: Type{Tuple{X}} where X <: Numbers # make names unique when it was a type of Tuple{X}
+                str *= "_Tuple"
+            end
+            if T <: Type{X} where X <: Numbers # make names unique when it was a type of Tuple{X}
+                str *= julia_name(T)
+            end
+            str
         end
-        str
     else
         error("Not transpilable: $T")
     end
@@ -200,23 +193,17 @@ end
 
 _typename(io::CIO, x::Union{AbstractString, Symbol}) = x
 
-if VERSION < v"0.6"
-    _typename(io::CIO, ::typeof(.+)) = "+"
-    _typename(io::CIO, ::typeof(.-)) = "-"
-    _typename(io::CIO, ::typeof(.*)) = "*"
-    _typename(io::CIO, ::typeof(./)) = "/"
-end
 
-_typename{T <: Number}(io::CIO, x::Type{Tuple{T}}) = _typename(io, T)
-_typename(io::CIO, x::Type{Void}) = "void"
-_typename(io::CIO, x::Type{Float64}) = "float"
-_typename(io::CIO, x::Type{Float32}) = "float"
-_typename(io::CIO, x::Type{Int}) = "int"
-_typename(io::CIO, x::Type{Int32}) = "int"
-_typename(io::CIO, x::Type{UInt}) = "uint"
-_typename(io::CIO, x::Type{UInt8}) = "uchar"
-_typename(io::CIO, x::Type{Bool}) = "bool"
-_typename{T}(io::CIO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
+_typename{T <: Number}(io::IO, x::Type{Tuple{T}}) = _typename(io, T)
+_typename(io::IO, x::Type{Void}) = "void"
+_typename(io::IO, x::Type{Float64}) = "float"
+_typename(io::IO, x::Type{Float32}) = "float"
+_typename(io::IO, x::Type{Int}) = "int"
+_typename(io::IO, x::Type{Int32}) = "int"
+_typename(io::IO, x::Type{UInt}) = "uint"
+_typename(io::IO, x::Type{UInt8}) = "uchar"
+_typename(io::IO, x::Type{Bool}) = "bool"
+_typename{T}(io::IO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
 
 # TODO this will be annoying on 0.6
 # _typename(x::typeof(cli.:(*))) = "*"

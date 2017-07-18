@@ -156,8 +156,7 @@ glintrinsic{T}(f::Type{T}, types::ANY) = true
 function glintrinsic{T, I}(
         f::typeof(getindex), types::Type{Tuple{T, I}}
     )
-
-    return (is_fixedsize_array(T) || is_ntuple(T)) && I <: Union{StaticArray, Integer}
+    return is_fixedsize_array(T) && I <: Union{StaticArray, Integer}
 end
 
 function glintrinsic{T <: GLDeviceArray, Val, I <: Integer}(
