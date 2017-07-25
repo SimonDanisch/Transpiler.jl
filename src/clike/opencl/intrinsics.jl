@@ -37,15 +37,17 @@ end
 
 
 # TODO I think this needs to be UInt, but is annoying to work with!
-get_global_id(dim::Union{int, Int}) = ret(int)
-get_local_id(dim::Union{int, Int}) = ret(int)
-get_group_id(dim::Union{int, Int}) = ret(int)
-get_local_size(dim::Union{int, Int}) = ret(int)
-get_global_size(dim::Union{int, Int}) = ret(int)
+get_global_id(dim::Integer) = ret(Cuint)
+get_local_id(dim::Integer) = ret(Cuint)
+get_group_id(dim::Integer) = ret(Cuint)
+get_local_size(dim::Integer) = ret(Cuint)
+get_global_size(dim::Integer) = ret(Cuint)
 
 
 const CLK_LOCAL_MEM_FENCE = Cuint(0)
+const CLK_GLOBAL_MEM_FENCE = Cuint(0)
 barrier(::Cuint) = nothing
+mem_fence(::Cuint) = nothing
 #######################################
 # globals
 
@@ -54,6 +56,7 @@ const Functions = Union{map(typeof, (functions..., erf, erfc))..., }
 function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     clintrinsic(f, Sugar.to_tuple(types))
 end
+
 function clintrinsic{F <: Function}(f::F, types::Tuple)
     if f == broadcast
         BF = types[1]

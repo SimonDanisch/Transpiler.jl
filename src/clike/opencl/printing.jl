@@ -22,19 +22,24 @@ show_linenumber(io::CLIO, line, file) = print(io, " // ", file, ", line ", line,
 
 
 # don't print f0 TODO this is a Float32 hack
-function show(io::CLIO, x::Float32)
-    print(io, Float64(x), 'f')
+function show(io::CLIO, x::DataType)
+    print(io, string("TYP_INST_", typename(io, Type{x})))
+end
+function show(io::CLIO, x::Union{Float32, Float64})
+    if isinf(x)
+        print(io, "INFINITY")
+    elseif isnan(x)
+        print(io, "NAN")
+    elseif isa(x, Float32)
+        print(io, Float64(x), 'f')
+    else
+        print(io, Float64(x))
+    end
 end
 function show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
 end
-function show_unquoted(io::IO, x::LazyMethod, ::Int, ::Int)
-    if isfunction(x)
-        print(io, functionname(io, x))
-    else
-        print(io, typename(io, x.signature))
-    end
-end
+
 function show_unquoted(io::CLIO, ssa::SSAValue, ::Int, ::Int)
     print(io, Sugar.ssavalue_name(ssa))
 end
@@ -358,24 +363,33 @@ end
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
     tname = typename(EmptyCLIO(), T)
-    str = sprint() do io
-        print(io, "typedef struct {\n")
-        nf = nfields(T)
-        fields = []
-        if nf == 0 # structs can't be empty
-            # we use bool as a short placeholder type.
-            # TODO, are there cases where bool is no good?
-            println(io, "float empty; // structs can't be empty")
-        else
-            for i in 1:nf
-                FT = fieldtype(T, i)
-                print(io, "    ", typename(EmptyCLIO(), FT))
-                print(io, ' ')
-                print(io, c_fieldname(T, i))
-                println(io, ';')
+    str = if T <: Type{X} where X # emit types as singletons
+        """typedef struct {
+            float empty; // structs can't be empty"
+        }$tname;
+        __constant $tname TYP_INST_$tname;
+        """
+    else
+        sprint() do io
+            print(io, "struct TYP$tname{\n")
+            nf = nfields(T)
+            fields = []
+            if nf == 0 # structs can't be empty
+                # we use bool as a short placeholder type.
+                # TODO, are there cases where bool is no good?
+                println(io, "float empty; // structs can't be empty")
+            else
+                for i in 1:nf
+                    FT = fieldtype(T, i)
+                    print(io, "    ", typename(EmptyCLIO(), FT))
+                    print(io, ' ')
+                    print(io, c_fieldname(T, i))
+                    println(io, ';')
+                end
             end
+            println(io, "};")
+            println(io, "typedef struct TYP$tname $tname;")
         end
-        println(io, "}$tname;")
     end
     return str
 end

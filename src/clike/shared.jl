@@ -20,12 +20,12 @@ end
 # we rewrite Int to Int32 implicitely like this!
 const int = Int32
 # same goes for float
-const float = Float64
+const float = Float32
 const uint = UInt32
 const uchar = UInt8
 
-const ints = (int, Int32, uint, Int64)
-const floats = (Float32, float)
+const ints = (UInt64, UInt32, UInt8, Int64, Int32, Int8)
+const floats = (Float32, Float64)
 const numbers = (ints..., floats..., Bool)
 
 const Ints = Union{ints...}
@@ -72,7 +72,7 @@ const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
     sin, tan, sqrt, cos, mod, round, floor, fract, log, atan2, atan, max, min,
     abs, pow, log10, exp, normalize, cross, dot, smoothstep, mix, norm,
-    length, clamp, cospi, sinpi, asin, fma, fabs
+    length, clamp, cospi, sinpi, asin, fma, fabs, sizeof
 )
 
 global replace_unsupported, empty_replace_cache!
@@ -116,7 +116,7 @@ function is_supported_char(io::CIO, char)
     # in a name
     isascii(char) &&
     !Base.isoperator(Symbol(char)) &&
-    !(char in ('.', '#', '(', ')', ','))  # some ascii codes are not allowed
+    !(char in ('.', '#', '(', ')', ',', '{', '}'))  # some ascii codes are not allowed
 end
 
 function symbol_hygiene(io::IO, sym)
@@ -152,6 +152,8 @@ function _typename(io::IO, x)
         T = x
         if T <: Tuple{X} where X <: Numbers
             typename(io, eltype(T))
+        elseif T <: Type # make names unique when it was a type of Tuple{X}
+            string(T)
         elseif is_fixedsize_array(T) # TODO look up numbers again!
             Sugar.vecname(io, T)
         elseif T <: Tuple
@@ -173,18 +175,11 @@ function _typename(io::IO, x)
                 end
                 str *= string("_", join(tstr, "_"))
             end
-            # TODO we make some types equal (e.g. Tuple{Cint} == Cint or Float32 == Float64)
-            # we either need to change that, or find a cleaner way to get unique names for those
-            if T <: Type{Tuple{X}} where X <: Numbers # make names unique when it was a type of Tuple{X}
-                str *= "_Tuple"
-            end
-            if T <: Type{X} where X <: Numbers # make names unique when it was a type of Tuple{X}
-                str *= julia_name(T)
-            end
+
             str
         end
     else
-        error("Not transpilable: $T")
+        error("Not transpilable: $x")
     end
     return str
 end
@@ -200,7 +195,8 @@ _typename(io::IO, x::Type{Float64}) = "float"
 _typename(io::IO, x::Type{Float32}) = "float"
 _typename(io::IO, x::Type{Int}) = "int"
 _typename(io::IO, x::Type{Int32}) = "int"
-_typename(io::IO, x::Type{UInt}) = "uint"
+_typename(io::IO, x::Type{UInt32}) = "uint"
+_typename(io::IO, x::Type{UInt64}) = "uint"
 _typename(io::IO, x::Type{UInt8}) = "uchar"
 _typename(io::IO, x::Type{Bool}) = "bool"
 _typename{T}(io::IO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"

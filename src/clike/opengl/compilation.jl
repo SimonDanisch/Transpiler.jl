@@ -79,7 +79,6 @@ function GLFunction{T}(f::Function, args::T, window)
         end
 
         println(io, "// Main inner function")
-        println(io, funcsource)
         funcargs = getfuncargs(decl)
         declare_global(io, getfuncargs(decl))
         varnames = map(x-> string(global_identifier, x.args[1]), funcargs)

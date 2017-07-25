@@ -410,7 +410,7 @@ function show_interface_block(
     println(io, array_expr,";\n};")
 end
 
-function print_dependencies(io, m; filterfun = (m)-> true, funcio = io, typio = io)
+function print_gl_dependencies(io, m; filterfun = (m)-> true, funcio = io, typio = io)
     # dependencies
     deps = Sugar.dependencies!(m, true)
     deps = reverse(collect(deps))
@@ -482,7 +482,7 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     # TODO glsl version string?!
     println(io, "#version 330")
 
-    print_dependencies(io, m, filterfun = m -> begin
+    print_gl_dependencies(io, m, filterfun = m -> begin
         # return type will get removed if its a tuple
         RT <: Tuple || return true
         !(Sugar.istype(m) && m.signature == RT)
@@ -573,7 +573,7 @@ function emit_fragment_shader(shader, arguments)
 
     println(io, "#version 330")
 
-    print_dependencies(io, m)
+    print_gl_dependencies(io, m)
 
     # uniform block
     show_uniforms(io, arg_names, arg_types)
