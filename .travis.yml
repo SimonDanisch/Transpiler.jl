@@ -1,5 +1,5 @@
 language: julia
-sudo: true
+sudo: false
 
 os:
   - linux
@@ -10,23 +10,11 @@ julia:
 
 notifications:
   email: false
-addons:
-  apt:
-    packages:
-    - libxxf86vm-dev
-    sources:
-    - kubuntu-backports
+
 
 before_install:
-
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi
   - if [ $TRAVIS_OS_NAME = "linux" ]; then
-
-      sudo add-apt-repository ppa:kalakris/cmake;
-      sudo apt-get update -qq;
-      sudo apt-get install cmake;
-      export DISPLAY=:99.0; sh -e /etc/init.d/xvfb start;
-
       bash .travis/amd_sdk.sh;
       tar -xjf AMD-SDK.tar.bz2;
       AMDAPPSDK=${HOME}/AMDAPPSDK;
