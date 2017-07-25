@@ -226,7 +226,7 @@ let hash_dict = Dict{Any, Int}(), counter = 0
     end
 end
 
-function functionname(io::IO, method::LazyMethod)
+function functionname(io::CIO, method::LazyMethod)
     if istype(method)
         # This should only happen, if the function is actually a type
         return string('(', _typename(io, method.signature), ')')

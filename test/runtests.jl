@@ -27,6 +27,6 @@ end
 @testset "OpenCL Transpiler" begin
     include("opencl_funcs.jl")
 end
-@testset "OpenGL Transpiler" begin
-    include("opengl_funcs.jl")
-end
+# @testset "OpenGL Transpiler" begin
+#     include("opengl_funcs.jl")
+# end
