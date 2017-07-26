@@ -6,11 +6,11 @@ os:
   - osx
 
 julia:
-  - 0.5
-  - nightly
+  - 0.6
 
 notifications:
   email: false
+
 
 before_install:
   - if [[ -a .git/shallow ]]; then git fetch --unshallow; fi

@@ -22,30 +22,52 @@ show_linenumber(io::CLIO, line, file) = print(io, " // ", file, ", line ", line,
 
 
 # don't print f0 TODO this is a Float32 hack
-function show(io::CLIO, x::Float32)
-    print(io, Float64(x))
+function show(io::CLIO, x::DataType)
+    print(io, string("TYP_INST_", typename(io, Type{x})))
+end
+function show(io::CLIO, x::Union{Float32, Float64})
+    if isinf(x)
+        print(io, "INFINITY")
+    elseif isnan(x)
+        print(io, "NAN")
+    elseif isa(x, Float32)
+        print(io, Float64(x), 'f')
+    else
+        print(io, Float64(x))
+    end
 end
 function show_unquoted(io::CLIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
 end
 
+function show_unquoted(io::CLIO, ssa::SSAValue, ::Int, ::Int)
+    print(io, Sugar.ssavalue_name(ssa))
+end
+
 function show_unquoted(io::CLIO, ex::GlobalRef, ::Int, ::Int)
-    # TODO Why is Base.x suddenly == GPUArrays.GLBackend.x
-    #if ex.mod == GLSLIntrinsics# || ex.mod == GPUArrays.GLBackend
-        print(io, ex.name)
-    #else
-    #    error("No non Intrinsic GlobalRef's for now!: $ex")
-    #end
+    # TODO disregarding modules doesn't seem to be a good idea.
+    # Thought about just appending the module to the name, but this doesn't work
+    # very well, since Julia allows itself quite a bit of freedom, when it's attaching
+    # the module to a name or not. E.g. depending on where things where created, you might get
+    # GPUArrays.GPUArray, or Visualize.GPUArrays.GPUArray.
+    print(io, ex.name)
 end
 
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
 function show_call(io::CLIO, head, func, func_args, indent)
     op, cl = expr_calls[head]
+    print(io, '(')
     if head == :ref
         show_unquoted(io, func, indent)
+        if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
+            # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
+            print(io, ')')
+            return
+        end
     else
-        show_function(io, func, map(x->expr_type(io.method, x), func_args))
+        show_unquoted(io, func, indent, -1)
     end
+    print(io, ')')
     if head == :(.)
         print(io, '.')
     end
@@ -58,12 +80,10 @@ function show_call(io::CLIO, head, func, func_args, indent)
     else
         show_enclosed_list(io, op, func_args, ", ", cl, indent)
     end
+    return
 end
 
 
-function Base.show_unquoted(io::CLIO, ssa::SSAValue, ::Int, ::Int)
-    print(io, Sugar.ssavalue_name(ssa))
-end
 
 # show a block, e g if/for/etc
 function show_block(io::CLIO, head, args::Vector, body, indent::Int)
@@ -121,8 +141,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
     elseif head === :call && nargs >= 1
         f = first(args)
         func_args = args[2:end]
-        func_arg_types = map(x->expr_type(io.method, x), func_args)
-        fname = Symbol(functionname(io, f, func_arg_types))
+        fname = Symbol(functionname(io, f))
         if fname == :getfield && nargs == 3
             show_unquoted(io, args[2], indent) # type to be accessed
             print(io, '.')
@@ -155,7 +174,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
             elseif func_prec > 0 # is a binary operator
                 na = length(func_args)
                 if (na == 2 || (na > 2 && fname in (:+, :++, :*))) && all(!isa(a, Expr) || a.head !== :... for a in func_args)
-                    sep = " $f "
+                    sep = " $fname "
                     if func_prec <= prec
                         show_enclosed_list(io, '(', func_args, sep, ')', indent, func_prec, true)
                     else
@@ -200,10 +219,28 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         unsupported_expr("Empty function, $(args[1])", line_number)
 
     # block with argument
-    elseif head in (:for, :while, :function, :if) && nargs==2
+    elseif head in (:while, :function, :if) && nargs == 2
         show_block(io, head, args[1], args[2], indent)
         print(io, "}")
-
+    elseif head == :for
+        forheader = args[1]
+        forheader.head == :(=) || error("Unsupported for: $ex")
+        i, range = forheader.args
+        range.head == :(:) || error("Unsupported for: $ex")
+        from, to = range.args
+        print(io, "for(")
+        show_unquoted(io, i)
+        print(io, " = ")
+        show_unquoted(io, from)
+        print(io, "; ")
+        show_unquoted(io, i)
+        print(io, " <= ")
+        show_unquoted(io, to)
+        print(io, "; ")
+        show_unquoted(io, i)
+        print(io, "++)")
+        show_block(io, "", [], args[2], indent)
+        print(io, "}")
     elseif (head == :module) && nargs==3 && isa(args[1],Bool)
         show_block(io, args[1] ? :module : :baremodule, args[2], args[3], indent)
         print(io, "}")
@@ -261,8 +298,6 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         show_unquoted(io, a1)
         parens && print(io, ")")
 
-
-
     elseif (head === :return)
         if length(args) == 1
             # return Void must not return anything in GLSL
@@ -275,8 +310,7 @@ function show_unquoted(io::CLIO, ex::Expr, indent::Int, prec::Int)
         else
             error("What dis return? $ex")
         end
-    elseif head == :inbounds # ignore
-    elseif (head === :meta)
+    elseif (head in (:meta, :inbounds))
         # TODO, just ignore this? Log this? We definitely don't need it in GLSL
     else
         println(ex)
@@ -287,31 +321,36 @@ end
 
 
 function Sugar.getfuncheader!(x::CLMethod)
-    if !isdefined(x, :funcheader)
-        x.funcheader = if Sugar.isfunction(x)
-            sprint() do io
-                args = Sugar.getfuncargs(x)
-                glio = CLIO(io, x)
-                show_type(glio, Sugar.returntype(x))
-                print(glio, ' ')
-                show_function(glio, x.signature...)
-                print(glio, '(')
-                for (i, elem) in enumerate(args)
-                    if i != 1
-                        print(glio, ", ")
-                    end
-                    name, T = elem.args
-                    show_type(glio, T)
+    try
+        if !isdefined(x, :funcheader)
+            x.funcheader = if Sugar.isfunction(x)
+                sprint() do io
+                    args = Sugar.getfuncargs(x)
+                    glio = CLIO(io, x)
+                    show_type(glio, Sugar.returntype(x))
                     print(glio, ' ')
-                    show_name(glio, name)
+                    show_unquoted(glio, x)
+                    print(glio, '(')
+                    for (i, elem) in enumerate(args)
+                        if i != 1
+                            print(glio, ", ")
+                        end
+                        name, T = elem.args
+                        show_type(glio, T)
+                        print(glio, ' ')
+                        show_name(glio, name)
+                    end
+                    print(glio, ')')
                 end
-                print(glio, ')')
+            else
+                ""
             end
-        else
-            ""
         end
+        x.funcheader
+    catch e
+        Sugar.print_stack_trace(STDERR, x)
+        rethrow(e)
     end
-    x.funcheader
 end
 
 function Sugar.getfuncsource(x::CLMethod)
@@ -320,34 +359,37 @@ function Sugar.getfuncsource(x::CLMethod)
         show_unquoted(CLIO(io, x), Sugar.getast!(x), 0, 0)
     end
 end
-function c_fieldname(T, i)
-    name = Base.fieldname(T, i)
-    if isa(name, Integer) # for types without fieldnames (Tuple)
-        "field$name"
-    else
-        symbol_hygiene(EmptyCLIO(), name)
-    end
-end
+
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
     tname = typename(EmptyCLIO(), T)
-    sprint() do io
-        print(io, "typedef struct {\n")
-        nf = nfields(T)
-        fields = []
-        if nf == 0 # structs can't be empty
-            # we use bool as a short placeholder type.
-            # TODO, are there cases where bool is no good?
-            println(io, "float empty; // structs can't be empty")
-        else
-            for i in 1:nf
-                FT = fieldtype(T, i)
-                print(io, "    ", typename(EmptyCLIO(), FT))
-                print(io, ' ')
-                print(io, c_fieldname(T, i))
-                println(io, ';')
+    str = if T <: Type{X} where X # emit types as singletons
+        """typedef struct {
+            float empty; // structs can't be empty"
+        }$tname;
+        __constant $tname TYP_INST_$tname;
+        """
+    else
+        sprint() do io
+            print(io, "struct TYP$tname{\n")
+            nf = nfields(T)
+            fields = []
+            if nf == 0 # structs can't be empty
+                # we use bool as a short placeholder type.
+                # TODO, are there cases where bool is no good?
+                println(io, "float empty; // structs can't be empty")
+            else
+                for i in 1:nf
+                    FT = fieldtype(T, i)
+                    print(io, "    ", typename(EmptyCLIO(), FT))
+                    print(io, ' ')
+                    print(io, c_fieldname(T, i))
+                    println(io, ';')
+                end
             end
+            println(io, "};")
+            println(io, "typedef struct TYP$tname $tname;")
         end
-        println(io, "}$tname;")
     end
+    return str
 end

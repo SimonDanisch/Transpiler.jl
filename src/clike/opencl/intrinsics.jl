@@ -1,5 +1,11 @@
 module CLIntrinsics
-import ..CLTranspiler: AbstractCLIO, EmptyCLIO
+
+import ..Transpiler: AbstractCLIO, EmptyCLIO
+import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
+import ..Transpiler: fixed_array_length, is_fixedsize_array
+import ..Transpiler: ret, vecs, Vecs, vector_lengths, functions
+
+
 using StaticArrays, Sugar
 import Sugar: typename, vecname
 using SpecialFunctions: erf
@@ -7,39 +13,8 @@ using SpecialFunctions: erf
 immutable CLArray{T, N} <: AbstractArray{T, N} end
 immutable LocalMemory{T} <: AbstractArray{T, 1} end
 
-const DeviceArray = Union{CLArray, LocalMemory}
-
-
-# Number types
-# Abstract types
-# for now we use Int, more accurate would be Int32. But to make things simpler
-# we rewrite Int to Int32 implicitely like this!
-const int = Int
-# same goes for float
-const float = Float64
-const uint = UInt
-const uchar = UInt8
-
-const ints = (int, Int32, uint, Int64)
-const floats = (Float32, float)
-const numbers = (ints..., floats..., Bool)
-
-const Ints = Union{ints...}
-const Floats = Union{floats...}
-const Numbers = Union{numbers...}
-
-const vector_lengths = (2, 4, 8, 16)
-
-_vecs = []
-for i in vector_lengths, T in numbers
-    push!(_vecs, NTuple{i, T})
-    push!(_vecs, SVector{i, T})
-end
-
-const vecs = (_vecs...)
-const Vecs = Union{vecs...}
+const CLDeviceArray = Union{CLArray, LocalMemory}
 const Types = Union{vecs..., numbers..., CLArray, LocalMemory}
-
 
 function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
     if !(N in (1, 2, 3))
@@ -55,69 +30,41 @@ function typename{T}(io::AbstractCLIO, x::Type{LocalMemory{T}})
     "__local $tname * "
 end
 
-function fixed_array_length(T)
-    N = if T <: Tuple
-        length(T.parameters)
-    else
-        length(T)
-    end
-end
-is_ntuple(x) = false
-is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
-
-function is_fixedsize_array{T}(::Type{T})
-    (T <: SVector || is_ntuple(T)) &&
-    fixed_array_length(T) in vector_lengths &&
-    eltype(T) <: Numbers
-
-end
-
 function vecname{T}(io::AbstractCLIO, t::Type{T})
     N = fixed_array_length(T)
     return string(typename(io, eltype(T)), N)
 end
 
-@noinline function ret{T}(::Type{T})::T
-    unsafe_load(Ptr{T}(C_NULL))
-end
 
 # TODO I think this needs to be UInt, but is annoying to work with!
-get_global_id(dim::int) = ret(int)
-get_local_id(dim::int) = ret(int)
-get_group_id(dim::int) = ret(int)
-get_local_size(dim::int) = ret(int)
-get_global_size(dim::int) = ret(int)
+get_global_id(dim::Integer) = ret(Cuint)
+get_local_id(dim::Integer) = ret(Cuint)
+get_group_id(dim::Integer) = ret(Cuint)
+get_local_size(dim::Integer) = ret(Cuint)
+get_global_size(dim::Integer) = ret(Cuint)
 
 
 const CLK_LOCAL_MEM_FENCE = Cuint(0)
+const CLK_GLOBAL_MEM_FENCE = Cuint(0)
 barrier(::Cuint) = nothing
-
-pow{T <: Numbers}(a::T, b::T) = ret(T)
+mem_fence(::Cuint) = nothing
 #######################################
 # globals
-const functions = (
-    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
-    sin, tan, sqrt, cos, mod, floor, log, atan2, max, min,
-    abs, pow, log10, exp, erf
-)
 
-const Functions = Union{map(typeof, functions)...}
+const Functions = Union{map(typeof, (functions..., erf, erfc))..., }
 
 function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     clintrinsic(f, Sugar.to_tuple(types))
 end
+
 function clintrinsic{F <: Function}(f::F, types::Tuple)
-    # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
     if f == broadcast
         BF = types[1]
         if BF <: Functions && all(T-> T <: Types, types[2:end])
             return true
         end
     end
-    if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
-        return true
-    end
-    if f == getindex && length(types) == 2 && first(types) <: DeviceArray && last(types) <: Integer
+    if f == getindex && length(types) == 2 && first(types) <: CLDeviceArray && last(types) <: Integer
         return true
     end
     m = methods(f)
@@ -137,7 +84,7 @@ end # end CLIntrinsics
 using .CLIntrinsics
 
 const cli = CLIntrinsics
-import .cli: clintrinsic, CLArray, DeviceArray
+import .cli: clintrinsic, CLArray, CLDeviceArray
 
 
 import Sugar.isintrinsic
@@ -152,7 +99,8 @@ end
 function isintrinsic(x::CLMethod)
     if isfunction(x)
         isintrinsic(Sugar.getfunction(x)) ||
-        cli.clintrinsic(x.signature...)
+        cli.clintrinsic(x.signature[1], Sugar.to_tuple(x.signature[2])) ||
+        cli.clintrinsic(x.signature[1], x.signature[2])
     else
         cli.clintrinsic(x.signature)
     end
@@ -165,23 +113,22 @@ function clintrinsic{T}(f::Type{T}, types::ANY)
     return true
 end
 
-# homogenous tuples, translated to glsl array
-function clintrinsic{N, T, I <: Integer}(
-        f::typeof(getindex), types::Type{Tuple{NTuple{N, T}, I}}
-    )
-    return true
-end
-
-function clintrinsic{T, I <: cli.Ints}(
+function clintrinsic{T, I <: Integer}(
         f::typeof(getindex), types::Type{Tuple{T, I}}
     )
     return is_fixedsize_array(T)
 end
-function clintrinsic{T <: DeviceArray, Val, I <: Integer}(
+function clintrinsic{T <: CLDeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
     )
     return true
 end
+function clintrinsic{T <: CLDeviceArray, Val, I <: Integer}(
+        f::typeof(setindex!), types::Type{Tuple{T, Val, I, I}}
+    )
+    return true
+end
+
 
 function clintrinsic(f::typeof(tuple), types::Tuple)
     true
@@ -193,12 +140,7 @@ end
 function Base.getindex{T, N}(a::CLArray{T, N}, i::Integer)
     cli.ret(T)
 end
-function Base.getindex{T}(a::CLArray{T, 2}, i1::Integer, i2::Integer)
-    cli.ret(T)
-end
-function Base.getindex{T}(a::CLArray{T, 3}, i1::Integer, i2::Integer, i3::Integer)
-    cli.ret(T)
-end
+
 function Base.setindex!{T}(::cli.LocalMemory{T}, ::T, ::Integer)
     nothing
 end
@@ -231,6 +173,8 @@ for N in cli.vector_lengths
     end
 end
 
+
+
 # TODO Clean up this ugly mess of determining what functions not need to be compiled
 # (called intrinsics here). Best would be a cl_import macro!
 # Problems are, that they either need to define a function stub for Inference
@@ -240,5 +184,22 @@ end
 macro cl_pirate(func)
 end
 macro cl_import(func)
+end
 
+function gpu_ind2sub{T}(dims, ind::T)
+    Base.@_inline_meta
+    _ind2sub(dims, ind - T(1))
+end
+
+_ind2sub{T}(::Tuple{}, ind::T) = (ind + T(1),)
+function _ind2sub{T}(indslast::NTuple{1}, ind::T)
+    Base.@_inline_meta
+    ((ind + T(1)),)
+end
+function _ind2sub{T}(inds, ind::T)
+    Base.@_inline_meta
+    r1 = inds[1]
+    indnext = div(ind, r1)
+    f = T(1); l = r1
+    (ind-l*indnext+f, _ind2sub(Base.tail(inds), indnext)...)
 end

@@ -1,10 +1,3 @@
-module CLTranspiler
-
-using Compat
-
-import ..Transpiler: CIO, symbol_hygiene
-
-using Sugar, OpenCL, StaticArrays
 using OpenCL: cl
 import Sugar: LazyMethod
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic
@@ -47,13 +40,6 @@ function to_cl_types(args::Union{Vector, Tuple})
     map(_to_cl_types, args)
 end
 
-immutable EmptyStruct
-    # Emtpy structs are not supported in OpenCL, which is why we emit a struct
-    # with one floating point field
-    x::Float32
-    EmptyStruct() = new()
-end
-
 function cl_convert{T}(x::T)
     # empty objects are empty and are only usable for dispatch
     isbits(x) && sizeof(x) == 0 && nfields(x) == 0 && return EmptyStruct()
@@ -66,38 +52,43 @@ cl_convert(x::cl.CLArray) = x.buffer # function objects are empty and are only u
 
 
 
-const compiled_functions = Dict{Any, CLFunction}()
+const cl_compiled_functions = Dict{Any, CLFunction}()
 
-function empty_compile_cache!()
-    empty!(compiled_functions)
+function cl_empty_compile_cache!()
+    empty!(cl_compiled_functions)
     return
+end
+
+
+function print_dependencies(io, method, visited = Set())
+    (method in visited) && return
+    push!(visited, method)
+    for elem in dependencies!(method)
+        print_dependencies(io, elem, visited)
+    end
+    isintrinsic(method) && return
+    println(io, "// ", method.signature)
+    println(io, getsource!(method))
 end
 
 function CLFunction{T}(f::Function, args::T, queue)
     ctx = cl.context(queue)
     gltypes = to_cl_types(args)
-    get!(compiled_functions, (f, gltypes)) do # TODO make this faster
-        decl = CLMethod((f, gltypes))
-        funcsource = getsource!(decl)
+    get!(cl_compiled_functions, (f, gltypes)) do # TODO make this faster
+        method = CLMethod((f, gltypes))
+        funcsource = getsource!(method)
         # add compute program dependant infos
-        io = CLIO(IOBuffer(), decl)
-        deps = reverse(collect(dependencies!(decl, true)))
-        types = filter(istype, deps)
-        funcs = filter(isfunction, deps)
-        println(io, "// dependant type declarations")
-        for typ in types
-            if !isintrinsic(typ)
-                println(io, getsource!(typ))
-            end
-        end
-        println(io, "// dependant function declarations")
-        for func in funcs
-            if !isintrinsic(func)
-                println(io, getsource!(func))
-            end
+        io = CLIO(IOBuffer(), method)
+
+        println(io, "// dependencies")
+        visited = Set()
+        for dep in dependencies!(method)
+            print_dependencies(io, dep, visited) # this is recursive but would print method itself
         end
 
+        println(io, "// ########################")
         println(io, "// Main inner function")
+        println(io, "// ", method.signature)
         print(io, "__kernel ") # mark as kernel function
         println(io, funcsource)
         kernelsource = String(take!(io.io))
@@ -105,9 +96,9 @@ function CLFunction{T}(f::Function, args::T, queue)
             cl.Program(ctx, source = kernelsource),
             options = "-cl-denorms-are-zero -cl-mad-enable -cl-unsafe-math-optimizations"
         )
-        fname = string(functionname(io, decl.signature...))
+        fname = string(functionname(io, method))
         k = cl.Kernel(p, fname)
-        CLFunction{T}(k, queue, decl, kernelsource)
+        CLFunction{T}(k, queue, method, kernelsource)
     end::CLFunction{T}
 end
 
@@ -176,7 +167,4 @@ end
         )
         return cl.Event(ret_event[], retain = false)
     end
-end
-
-
 end
