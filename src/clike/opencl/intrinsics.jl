@@ -2,8 +2,8 @@ module CLIntrinsics
 
 import ..Transpiler: AbstractCLIO, EmptyCLIO
 import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
-import ..Transpiler: fixed_array_length, is_fixedsize_array, GLMethod
-import ..Transpiler: AbstractGLIO, ret, vecs, Vecs, vector_lengths, functions
+import ..Transpiler: fixed_array_length, is_fixedsize_array
+import ..Transpiler: ret, vecs, Vecs, vector_lengths, functions
 
 
 using StaticArrays, Sugar
