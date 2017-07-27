@@ -43,6 +43,8 @@ get_group_id(dim::Integer) = ret(Cuint)
 get_local_size(dim::Integer) = ret(Cuint)
 get_global_size(dim::Integer) = ret(Cuint)
 
+select(a::T, b::T, c::Bool) where T = ret(T)
+
 
 const CLK_LOCAL_MEM_FENCE = Cuint(0)
 const CLK_GLOBAL_MEM_FENCE = Cuint(0)

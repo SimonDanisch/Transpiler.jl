@@ -306,7 +306,7 @@ end
 
 function Sugar.gettypesource(x::GLMethods)
     T = x.signature
-    tname = typename(EmptyGLIO(), T)
+    tname = typename(EmptyCIO(), T)
     sprint() do io
         println(io, "// Julia name: $T")
         print(io, "struct $tname{\n")
@@ -319,7 +319,7 @@ function Sugar.gettypesource(x::GLMethods)
         else
             for i in 1:nf
                 FT = fieldtype(T, i)
-                print(io, "    ", typename(EmptyGLIO(), FT))
+                print(io, "    ", typename(EmptyCIO(), FT))
                 print(io, ' ')
                 print(io, c_fieldname(T, i))
                 println(io, ';')

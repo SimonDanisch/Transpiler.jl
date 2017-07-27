@@ -7,8 +7,7 @@ const GEOMMethod = LazyMethod{:GEOM}
 const GLMethods = Union{GLMethod, GEOMMethod}
 
 @compat abstract type AbstractGLIO <: CIO end
-immutable EmptyGLIO <: AbstractGLIO
-end
+
 immutable GLFunction{Args <: Tuple}
     program::GLProgram
     local_size::NTuple{3, Int}

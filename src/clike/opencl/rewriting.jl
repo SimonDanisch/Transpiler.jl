@@ -141,6 +141,11 @@ function rewrite_function(method::CLMethod, expr)
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, pow, types)
         return expr
+    elseif f == (ifelse) && length(types) == 3 && types[1] == Bool && all(x-> x <: cli.Types || is_fixedsize_array(x), types[2:3])
+        _types = (types[2], types[3], types[1])
+        sm = LazyMethod(li, cli.select, _types)
+        expr.args = [sm, expr.args[3], expr.args[4], expr.args[2]]
+        return expr
     elseif f == abs && length(types) == 1 && all(t-> t <: cli.Floats, types)
         expr.args[1] = LazyMethod(li, fabs, types)
         return expr

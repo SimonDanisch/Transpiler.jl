@@ -3,6 +3,8 @@ import Sugar: supports_overloading, show_type, show_function
 import SpecialFunctions: erf, erfc
 
 @compat abstract type CIO <: ASTIO end
+immutable EmptyCIO <: CIO
+end
 
 immutable EmptyStruct
     # Emtpy structs are not supported in OpenCL, which is why we emit a struct
@@ -272,7 +274,7 @@ function c_fieldname(T, i)
     if isa(name, Integer) # for types without fieldnames (Tuple)
         "field$name"
     else
-        symbol_hygiene(EmptyGLIO(), name)
+        symbol_hygiene(EmptyCIO(), name)
     end
 end
 
@@ -286,7 +288,7 @@ function typed_type_fields(T)
     else
         for i in 1:nf
             FT = fieldtype(T, i)
-            tname = Symbol(typename(EmptyGLIO(), FT))
+            tname = Symbol(typename(EmptyCIO(), FT))
             fname = Symbol(c_fieldname(T, i))
             push!(fields, :($fname::$tname))
         end
