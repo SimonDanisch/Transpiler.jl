@@ -363,32 +363,35 @@ end
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
     tname = typename(EmptyCLIO(), T)
-    str = if T <: Type{X} where X # emit types as singletons
-        """typedef struct {
-            float empty; // structs can't be empty"
-        }$tname;
+    str = if (!isleaftype(T) || T <: Type{X} where X) # emit type instances as singletons
+        """typedef int $tname; // placeholder type instance
         __constant $tname TYP_INST_$tname;
         """
     else
-        sprint() do io
-            print(io, "struct TYP$tname{\n")
-            nf = nfields(T)
-            fields = []
-            if nf == 0 # structs can't be empty
-                # we use bool as a short placeholder type.
-                # TODO, are there cases where bool is no good?
-                println(io, "float empty; // structs can't be empty")
-            else
-                for i in 1:nf
-                    FT = fieldtype(T, i)
-                    print(io, "    ", typename(EmptyCLIO(), FT))
-                    print(io, ' ')
-                    print(io, c_fieldname(T, i))
-                    println(io, ';')
+        if isleaftype(T) && sizeof(T) == 0 && nfields(T) == 0
+            # emit empty types as Int32, since struct can't be empty
+            return "typedef int $tname; // empty type emitted as an int"
+        else
+            sprint() do io
+                print(io, "struct  __attribute__ ((packed)) TYP$tname{\n")
+                nf = nfields(T)
+                fields = []
+                if nf == 0 # structs can't be empty
+                    # we use bool as a short placeholder type.
+                    # TODO, are there cases where bool is no good?
+                    println(io, "float empty; // structs can't be empty")
+                else
+                    for i in 1:nf
+                        FT = fieldtype(T, i)
+                        print(io, "    ", typename(EmptyCLIO(), FT))
+                        print(io, ' ')
+                        print(io, c_fieldname(T, i))
+                        println(io, ';')
+                    end
                 end
+                println(io, "};")
+                println(io, "typedef struct TYP$tname $tname;")
             end
-            println(io, "};")
-            println(io, "typedef struct TYP$tname $tname;")
         end
     end
     return str

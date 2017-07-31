@@ -58,7 +58,9 @@ const Functions = Union{map(typeof, (functions..., erf, erfc))..., }
 function clintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
     clintrinsic(f, Sugar.to_tuple(types))
 end
-
+function is_cl_native_type(T)
+    T <: Types || is_fixedsize_array(T) || T <: Tuple{T} where T <: Numbers
+end
 function clintrinsic{F <: Function}(f::F, types::Tuple)
     if f == broadcast
         BF = types[1]
@@ -67,12 +69,13 @@ function clintrinsic{F <: Function}(f::F, types::Tuple)
         end
     end
     if f == getindex && length(types) == 2 && first(types) <: CLDeviceArray && last(types) <: Integer
-        return true
+        return !is_fixedsize_array(eltype(first(types)))
     end
+    (F <: Functions && all(is_cl_native_type, types)) && return true
     m = methods(f)
     isempty(m) && return false
     sym = first(m).name
-    (F <: Functions && all(T-> T <: Types, types)) || (
+    (
         # if any intrinsic funtion stub matches
         isdefined(CLIntrinsics, sym) &&
         Base.binding_module(CLIntrinsics, sym) == CLIntrinsics &&
@@ -123,12 +126,7 @@ end
 function clintrinsic{T <: CLDeviceArray, Val, I <: Integer}(
         f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
     )
-    return true
-end
-function clintrinsic{T <: CLDeviceArray, Val, I <: Integer}(
-        f::typeof(setindex!), types::Type{Tuple{T, Val, I, I}}
-    )
-    return true
+    return !is_fixedsize_array(Val) # fixed size array setindex is no intrinsic, since it uses vstore
 end
 
 
@@ -136,46 +134,48 @@ function clintrinsic(f::typeof(tuple), types::Tuple)
     true
 end
 
-function Base.getindex{T}(a::cli.LocalMemory{T}, i::Integer)
-    cli.ret(T)
-end
-function Base.getindex{T, N}(a::CLArray{T, N}, i::Integer)
-    cli.ret(T)
-end
+Base.getindex{T}(a::cli.LocalMemory{T}, i::Integer) = cli.ret(T)
+Base.getindex{T, N}(a::CLArray{T, N}, i::Integer) = cli.ret(T)
 
-function Base.setindex!{T}(::cli.LocalMemory{T}, ::T, ::Integer)
-    nothing
-end
-function Base.setindex!{T, N}(a::CLArray{T, N}, value::T, i::Integer)
-    nothing
-end
-function Base.setindex!{T}(a::CLArray{T, 2}, value::T, i1::Integer, i2::Integer)
-    nothing
-end
-function Base.setindex!{T}(a::CLArray{T, 3}, value::T, i1::Integer, i2::Integer, i3::Integer)
-    nothing
-end
+Base.setindex!{T}(::cli.LocalMemory{T}, ::T, ::Integer) = nothing
+Base.setindex!{T, N}(a::CLArray{T, N}, value::T, i::Integer) = nothing
+
 
 # TODO overload SIMD.vload, so that code can run seamlessly on the CPU as well.
-for N in cli.vector_lengths
-    fload = Symbol(string("vload", N))
-    fstore = Symbol(string("vstore", N))
-    @eval begin
-        $(fload){T <: cli.Numbers, N}(i::Integer, a::CLArray{T, N}) = cli.ret(SVector{$N, T})
-        function vload{T <: cli.Numbers}(::Type{SVector{$N, T}}, a::CLArray, i::Integer)
-            $(fload)(i - 1, a)
+for VecType in (NTuple, SVector)
+    for N in cli.vector_lengths
+        fload = Symbol(string("vload", N))
+        fstore = Symbol(string("vstore", N))
+        VType = :($VecType{$N, T})
+        if VecType == NTuple
+            @eval begin
+                $(fload){T <: cli.Numbers, N}(i::Integer, a::CLArray{T, N}) = cli.ret(NTuple{$N, T})
+                $(fstore){T <: cli.Numbers, N}(x::$VType, i::Integer, a::CLArray{T, N}) = nothing
+                function cli.clintrinsic(f::typeof($fstore), types::Tuple)
+                    length(types) == 3 || return false
+                    is_fixedsize_array(types[1]) && types[2] <: Integer && types[3] <: CLArray
+                end
+                function cli.clintrinsic(f::typeof($fload), types::Tuple)
+                    length(types) == 2 || return false
+                    types[1] <: Integer && types[2] <: CLArray
+                end
+            end
         end
-        clintrinsic{T <: Tuple}(f::typeof($fload), types::Type{T}) = true
-
-        $(fstore){T <: cli.Numbers, N}(x::SVector{$N, T}, i::Integer, a::CLArray{T, N}) = nothing
-        function vstore{T <: cli.Numbers}(x::SVector{$N, T}, a::CLArray, i::Integer)
-            $(fstore)(x, i - 1, a)
+        @eval begin
+            function vload{T <: cli.Numbers, N}(::Type{$VType}, a::CLArray{$VType, N}, i::Integer)
+                $VType($(fload)(i - 1, CLArray{T, N}(a)))
+            end
+            function vstore{T <: cli.Numbers, N}(x::$VType, a::CLArray{$VType, N}, i::Integer)
+                $(fstore)(x, i - 1, CLArray{T, N}(a))
+            end
         end
-        clintrinsic{T <: Tuple}(f::typeof($fstore), types::Type{T}) = true
     end
 end
 
-
+Base.getindex{T <: Vecs, N}(a::CLArray{T, N}, i::Integer) = vload(T, a, i)
+function Base.setindex!{T <: Vecs}(a::CLArray{T}, value::T, i::Integer)
+    vstore(value, a, i)
+end
 
 # TODO Clean up this ugly mess of determining what functions not need to be compiled
 # (called intrinsics here). Best would be a cl_import macro!

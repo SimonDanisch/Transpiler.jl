@@ -42,7 +42,10 @@ function getindex_replace(m, expr, _types)
             end
             ret = typed_expr(expr.typ, :ref, expr.args[2], idx_expr)
             return true, ret
-        elseif T <: CLDeviceArray && all(x-> x <: Integer, types[2:end])
+        elseif T <: CLDeviceArray && types[2] <: Integer
+            if is_fixedsize_array(eltype(T))
+                return false, expr # we use vload for this
+            end
             idxs = expr.args[3:end]
             idx_expr = map(idxs) do idx
                 if isa(idx, Integer)
@@ -106,7 +109,8 @@ function rewrite_function(method::CLMethod, expr)
             return similar_expr(expr, [t, expr.args[3:end]...])
         end
     elseif f == setindex! && length(types) >= 3 &&
-            types[1] <: CLDeviceArray && all(x-> x <: Integer, types[3:end])
+            types[1] <: CLDeviceArray &&
+            all(x-> x <: Integer, types[3:end]) && !is_fixedsize_array(types[2])
         idxs = expr.args[4:end]
         idx_expr = map(idxs) do idx
             if isa(idx, Integer)

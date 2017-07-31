@@ -92,6 +92,7 @@ function CLFunction{T}(f::Function, args::T, queue)
         print(io, "__kernel ") # mark as kernel function
         println(io, funcsource)
         kernelsource = String(take!(io.io))
+        #println(kernelsource)
         p = cl.build!(
             cl.Program(ctx, source = kernelsource),
             options = "-cl-denorms-are-zero -cl-mad-enable -cl-unsafe-math-optimizations"
