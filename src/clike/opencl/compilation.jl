@@ -14,6 +14,8 @@ type CLIO{T <: IO} <: AbstractCLIO
     method::CLMethod
 end
 
+(::Type{CIO})(io, m::CLMethod) = CLIO(io, m)
+
 supports_overloading(io::CLIO) = false
 
 include("intrinsics.jl")

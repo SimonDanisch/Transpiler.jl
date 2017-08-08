@@ -9,10 +9,11 @@ end
 immutable EmptyStruct
     # Emtpy structs are not supported in OpenCL, which is why we emit a struct
     # with one floating point field
-    x::Float32
+    x::Int32
     EmptyStruct() = new()
 end
 
+# helper function to fake a return type to type inference for intrinsic function stabs
 @noinline function ret{T}(::Type{T})::T
     unsafe_load(Ptr{T}(C_NULL))
 end
@@ -43,8 +44,11 @@ end
 const vecs = (_vecs...)
 const Vecs = Union{vecs...}
 
-pow{T <: Numbers}(a::T, b::T) = a ^ b
 
+##################################################
+# Intrinsics that don't have a julia counterpart:
+
+pow{T <: Numbers}(a::T, b::T) = a ^ b
 
 """
 smoothstep performs smooth Hermite interpolation between 0 and 1 when edge0 < x < edge1. This is useful in cases where a threshold function with a smooth transition is desired. smoothstep is equivalent to:
@@ -68,8 +72,29 @@ mix{T}(x, y, a::T) = x .* (T(1) .- a) .+ y .* a
 fract(x) = x - floor(x)
 fabs(x::AbstractFloat) = abs(x)
 
+#########################
+# Important functions that we need on the GPU:
+#
+function gpu_ind2sub{T}(dims, ind::T)
+    Base.@_inline_meta
+    _ind2sub(dims, ind - T(1))
+end
+
+_ind2sub{T}(::Tuple{}, ind::T) = (ind + T(1),)
+function _ind2sub{T}(indslast::NTuple{1}, ind::T)
+    Base.@_inline_meta
+    ((ind + T(1)),)
+end
+function _ind2sub{T}(inds, ind::T)
+    Base.@_inline_meta
+    r1 = inds[1]
+    indnext = div(ind, r1)
+    f = T(1); l = r1
+    (ind-l*indnext+f, _ind2sub(Base.tail(inds), indnext)...)
+end
+
 #######################################
-# globals
+# shared common intrinsic functions
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
     sin, tan, sqrt, cos, mod, round, floor, fract, log, atan2, atan, max, min,
@@ -77,7 +102,6 @@ const functions = (
     length, clamp, cospi, sinpi, asin, fma, fabs, sizeof
 )
 
-global replace_unsupported, empty_replace_cache!
 function fixed_array_length(T)
     N = if T <: Tuple
         length(T.parameters)
@@ -88,13 +112,18 @@ end
 is_ntuple(x) = false
 is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
 
-function is_fixedsize_array{T}(::Type{T})
+
+const vector_lengths = (2, 3, 4, 8, 16)
+# don't do hygiene
+function is_fixedsize_array{T}(m::LazyMethod, ::Type{T})
     (T <: StaticVector || is_ntuple(T)) &&
     fixed_array_length(T) in vector_lengths &&
     eltype(T) <: Numbers
 end
 
 
+
+global replace_unsupported, empty_replace_cache!
 let _unsupported_id = 0
     const unsupported_replace_dict = Dict{Char, String}()
     function empty_replace_cache!()
@@ -139,8 +168,6 @@ end
 typename(io::IO, x) = Symbol(symbol_hygiene(io, _typename(io, x)))
 
 
-const vector_lengths = (2, 3, 4, 8, 16)
-# don't do hygiene
 
 _typename(io::IO, T::QuoteNode) = _typename(io, T.value)
 julia_name(x::Type{Type{T}}) where T = string(T)
@@ -186,10 +213,7 @@ function _typename(io::IO, x)
     return str
 end
 
-
-
 _typename(io::CIO, x::Union{AbstractString, Symbol}) = x
-
 
 _typename{T <: Number}(io::IO, x::Type{Tuple{T}}) = _typename(io, T)
 _typename(io::IO, x::Type{Void}) = "void"
@@ -203,17 +227,8 @@ _typename(io::IO, x::Type{UInt8}) = "uchar"
 _typename(io::IO, x::Type{Bool}) = "bool"
 _typename{T}(io::IO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
 
-# TODO this will be annoying on 0.6
-# _typename(x::typeof(cli.:(*))) = "*"
-# _typename(x::typeof(cli.:(<=))) = "lessThanEqual"
-# _typename(x::typeof(cli.:(+))) = "+"
-
-function _typename{F <: Function}(io::CIO, f::F)
-    _typename(io, F.name.mt.name)
-end
-function _typename{F <: Function}(io::CIO, f::Type{F})
-    string(F)
-end
+_typename{F <: Function}(io::CIO, f::F) = _typename(io, F.name.mt.name)
+_typename{F <: Function}(io::CIO, f::Type{F}) = string(F)
 
 global signature_hash
 let hash_dict = Dict{Any, Int}(), counter = 0
@@ -230,7 +245,7 @@ end
 
 function functionname(io::CIO, method::LazyMethod)
     if istype(method)
-        # This should only happen, if the function is actually a type
+        # This should only happen, if the function is actually a type constructor
         return string('(', _typename(io, method.signature), ')')
     end
     f_sym = Symbol(typeof(Sugar.getfunction(method)).name.mt.name)
@@ -265,16 +280,20 @@ function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)
     show_name(io, slot)
 end
 
-function c_fieldname(T, i)
-    name = try
-        Base.fieldname(T, i)
-    catch e
-        error("couldn't get field name for $T")
-    end
-    if isa(name, Integer) # for types without fieldnames (Tuple)
-        "field$name"
+function c_fieldname(m::LazyMethod, T, i::Integer)
+    if isleaftype(T)
+        name = if is_fixedsize_array(T)
+            fixed_size_array_fieldname(m, T, i)
+        else
+            Base.fieldname(T, i)
+        end
+        return if isa(name, Integer) # for types without fieldnames (Tuple)
+            "field$name"
+        else
+            symbol_hygiene(EmptyCIO(), name)
+        end
     else
-        symbol_hygiene(EmptyCIO(), name)
+        error("Found abstract type: $T")
     end
 end
 
@@ -294,4 +313,344 @@ function typed_type_fields(T)
         end
     end
     fields
+end
+
+show_linenumber(io::CIO, line)       = print(io, " // line ", line,':')
+show_linenumber(io::CIO, line, file) = print(io, " // ", file, ", line ", line, ':')
+
+function show(io::CIO, x::DataType)
+    print(io, string("TYP_INST_", typename(io, Type{x})))
+end
+
+function show_unquoted(io::CIO, sym::Symbol, ::Int, ::Int)
+    print(io, Symbol(symbol_hygiene(io, sym)))
+end
+function show_unquoted(io::CIO, ssa::SSAValue, ::Int, ::Int)
+    print(io, Sugar.ssavalue_name(ssa))
+end
+# this shouldn't be needed anymore, since sugar replaces all GlobalRef's
+# function show_unquoted(io::CIO, ex::GlobalRef, ::Int, ::Int)
+#     # TODO disregarding modules doesn't seem to be a good idea.
+#     # Thought about just appending the module to the name, but this doesn't work
+#     # very well, since Julia allows itself quite a bit of freedom, when it's attaching
+#     # the module to a name or not. E.g. depending on where things where created, you might get
+#     # GPUArrays.GPUArray, or Visualize.GPUArrays.GPUArray.
+#     print(io, ex.name)
+# end
+
+
+
+#=
+This file contains functions taken and modified from Julia/base/show.jl
+license of show.jl:
+Copyright (c) 2009-2016: Jeff Bezanson, Stefan Karpinski, Viral B. Shah, and other contributors:
+https://github.com/JuliaLang/julia/contributors
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+=#
+
+
+# show a normal (non-operator) function call, e.g. f(x,y) or A[z]
+function show_call(io::CIO, head, func, func_args, indent)
+    op, cl = expr_calls[head]
+    print(io, '(')
+    if head == :ref
+        show_unquoted(io, func, indent)
+        if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
+            # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
+            print(io, ')')
+            return
+        end
+    else
+        show_unquoted(io, func, indent, -1)
+    end
+    print(io, ')')
+    if head == :(.)
+        print(io, '.')
+    end
+    if !isempty(func_args) && isa(func_args[1], Expr) && func_args[1].head == :parameters
+        print(io, op)
+        show_list(io, func_args[2:end], ", ", indent)
+        print(io, "; ")
+        show_list(io, func_args[1].args, ", ", indent)
+        print(io, cl)
+    else
+        show_enclosed_list(io, op, func_args, ", ", cl, indent)
+    end
+    return
+end
+
+# show a block, e g if/for/etc
+function show_block(io::CIO, head, args::Vector, body, indent::Int)
+    if isempty(args) && isa(body, Expr) && isempty(body.args)
+        return # everything empty, let's not make a fool of ourselves and print something
+    end
+    if isempty(args)
+        print(io, head, '{')
+    else
+        print(io, head, '(')
+        show_list(io, args, ", ", indent)
+        print(io, "){")
+    end
+
+    ind = head === :module || head === :baremodule ? indent : indent + indent_width
+    exs = (is_expr(body, :block) || is_expr(body, :body)) ? body.args : Any[body]
+    for (i, ex) in enumerate(exs)
+        sep = i == 1 ? "" : ";"
+        print(io, sep, '\n', " "^ind)
+        show_unquoted(io, ex, ind, -1)
+    end
+    print(io, ";\n", " "^indent)
+end
+
+
+function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
+    line_number = 0 # TODO include line numbers
+    head, args, nargs = ex.head, ex.args, length(ex.args)
+    # dot (i.e. "x.y"), but not compact broadcast exps
+    if head == :(.) && !is_expr(args[2], :tuple)
+        show_unquoted(io, args[1], indent + indent_width)
+        print(io, '.')
+        if is_quoted(args[2])
+            show_unquoted(io, unquoted(args[2]), indent + indent_width)
+        else
+            print(io, '(')
+            show_unquoted(io, args[2], indent + indent_width)
+            print(io, ')')
+        end
+
+    # variable declaration TODO might this occure in normal code?
+    elseif head == :(::) && nargs == 2
+        show_type(io, args[2])
+        print(io, ' ')
+        show_name(io, args[1])
+    # infix (i.e. "x<:y" or "x = y")
+
+    elseif (head in expr_infix_any && (nargs == 2) || (head == :(:)) && nargs == 3)
+        func_prec = operator_precedence(head)
+        head_ = head in expr_infix_wide ? " $head " : head
+        if func_prec <= prec
+            show_enclosed_list(io, '(', args, head_, ')', indent, func_prec, true)
+        else
+            show_list(io, args, head_, indent, func_prec, true)
+        end
+
+    # function call
+    elseif head === :call && nargs >= 1
+        f = first(args)
+        func_args = args[2:end]
+        fname = Symbol(functionname(io, f))
+        if fname == :getfield && nargs == 3
+            show_unquoted(io, args[2], indent) # type to be accessed
+            print(io, '.')
+            show_unquoted(io, args[3], indent)
+        else
+            # TODO handle getfield
+            func_prec = operator_precedence(fname)
+            # scalar multiplication (i.e. "100x")
+            if (
+                    fname === :* &&
+                    length(func_args) == 2 && isa(func_args[1], Real) &&
+                    isa(func_args[2], Symbol)
+                )
+                if func_prec <= prec
+                    show_enclosed_list(io, '(', func_args, "", ')', indent, func_prec)
+                else
+                    show_list(io, func_args, "", indent, func_prec)
+                end
+
+            # unary operator (i.e. "!z")
+            elseif isa(fname, Symbol) && fname in uni_ops && length(func_args) == 1
+                print(io, fname)
+                if isa(func_args[1], Expr) || func_args[1] in all_ops
+                    show_enclosed_list(io, '(', func_args, ",", ')', indent, func_prec)
+                else
+                    show_unquoted(io, func_args[1])
+                end
+
+            # binary operator (i.e. "x + y")
+            elseif func_prec > 0 # is a binary operator
+                na = length(func_args)
+                if (na == 2 || (na > 2 && fname in (:+, :++, :*))) && all(!isa(a, Expr) || a.head !== :... for a in func_args)
+                    sep = " $fname "
+                    if func_prec <= prec
+                        show_enclosed_list(io, '(', func_args, sep, ')', indent, func_prec, true)
+                    else
+                        show_list(io, func_args, sep, indent, func_prec, true)
+                    end
+                elseif na == 1
+                    # 1-argument call to normally-binary operator
+                    op, cl = expr_calls[head]
+                    show_unquoted(io, f, indent)
+                    show_enclosed_list(io, op, func_args, ",", cl, indent)
+                else
+                    show_call(io, head, f, func_args, indent)
+                end
+
+            # normal function (i.e. "f(x,y)")
+            else
+                show_call(io, head, f, func_args, indent)
+            end
+        end
+    # other call-like expressions ("A[1,2]", "T{X,Y}", "f.(X,Y)")
+    elseif haskey(expr_calls, head) && nargs >= 1  # :ref/:curly/:calldecl/:(.)
+        funcargslike = head == :(.) ? ex.args[2].args : ex.args[2:end]
+        show_call(io, head, ex.args[1], funcargslike, indent)
+    # comparison (i.e. "x < y < z")
+    elseif (head == :comparison) && nargs >= 3 && (nargs & 1==1)
+        comp_prec = minimum(operator_precedence, args[2:2:end])
+        if comp_prec <= prec
+            show_enclosed_list(io, '(', args, " ", ')', indent, comp_prec)
+        else
+            show_list(io, args, " ", indent, comp_prec)
+        end
+
+    # function calls need to transform the function from :call to :calldecl
+    # so that operators are printed correctly
+    elseif head === :function && nargs==2 && is_expr(args[1], :call)
+        # TODO, not sure what this is about
+        show_block(io, head, Expr(:calldecl, args[1].args...), args[2], indent)
+        print(io, "}")
+
+    elseif head === :function && nargs == 1
+        # TODO empty function in GLSL?
+        unsupported_expr("Empty function, $(args[1])", line_number)
+
+    # block with argument
+    elseif head in (:while, :function, :if) && nargs == 2
+        show_block(io, head, args[1], args[2], indent)
+        print(io, "}")
+    elseif head == :for
+        forheader = args[1]
+        forheader.head == :(=) || error("Unsupported for: $ex")
+        i, range = forheader.args
+        range.head == :(:) || error("Unsupported for: $ex")
+        from, to = range.args
+        print(io, "for(")
+        show_unquoted(io, i)
+        print(io, " = ")
+        show_unquoted(io, from)
+        print(io, "; ")
+        show_unquoted(io, i)
+        print(io, " <= ")
+        show_unquoted(io, to)
+        print(io, "; ")
+        show_unquoted(io, i)
+        print(io, "++)")
+        show_block(io, "", [], args[2], indent)
+        print(io, "}")
+    elseif (head == :module) && nargs==3 && isa(args[1],Bool)
+        show_block(io, args[1] ? :module : :baremodule, args[2], args[3], indent)
+        print(io, "}")
+
+    # type declaration
+    elseif (head == :type) && nargs==3
+        # TODO struct
+        show_block(io, args[1] ? :type : :immutable, args[2], args[3], indent)
+        print(io, "}")
+
+    elseif head == :bitstype && nargs == 2
+        unsupported_expr("bitstype", line_number)
+
+    # type annotation (i.e. "::Int")
+    elseif head == :(::) && nargs == 1
+        print(io, ' ')
+        print(io, typename(io, args[1]))
+
+    elseif (nargs == 0 && head in (:break, :continue))
+        print(io, head)
+
+    elseif (nargs == 1 && head in (:abstract, :const)) ||
+                          head in (:local,  :global, :export)
+        print(io, head, ' ')
+        show_list(io, args, ", ", indent)
+
+    elseif (head === :macrocall) && nargs >= 1
+        # expand macros
+        show_unquoted(io, expand(ex), indent)
+
+    elseif (head === :line) && 1 <= nargs <= 2
+        show_linenumber(io, args...)
+
+    elseif (head === :if) && nargs == 3     # if/else
+        show_block(io, "if",   args[1], args[2], indent)
+        show_block(io, "} else", args[3], indent)
+        print(io, "}")
+
+    elseif (head === :block) || (head === :body)
+        show_block(io, "", ex, indent); print(io, "}")
+
+    elseif head === :return
+        if length(args) == 1
+            # empty return (i.e. "function f() return end")
+            if isa(args[1], Expr) && (args[1].typ == Void || args[1] === nothing)
+                # ignore empty return / return nothing
+            else
+                print(io, "return ")
+                show_unquoted(io, args[1])
+            end
+        elseif isempty(args)
+            # ignore return if no args or void
+        else
+            error("Unknown return Expr: $ex")
+        end
+    elseif (head in (:meta, :inbounds))
+        # TODO, just ignore this? Log this? We definitely don't need it in GLSL
+    else
+        println(ex)
+        unsupported_expr(string(ex), line_number)
+    end
+    nothing
+end
+
+function show_typed_list(io, list, seperator, intent)
+    for (i, elem) in enumerate(list)
+        i != 1 && print(io, seperator)
+        name, T = elem.args
+        print(io, "    "^(intent))
+        show_type(io, T)
+        print(io, ' ')
+        show_name(io, name)
+    end
+end
+
+function Sugar.getfuncheader!(x::LazyMethod)
+    try
+        if !isdefined(x, :funcheader)
+            x.funcheader = if Sugar.isfunction(x)
+                sprint() do io
+                    args = Sugar.getfuncargs(x)
+                    glio = CIO(io, x)
+                    show_type(glio, Sugar.returntype(x))
+                    print(glio, ' ')
+                    show_unquoted(glio, x)
+                    print(glio, '(')
+                    for (i, elem) in enumerate(args)
+                        if i != 1
+                            print(glio, ", ")
+                        end
+                        name, T = elem.args
+                        show_type(glio, T)
+                        print(glio, ' ')
+                        show_name(glio, name)
+                    end
+                    print(glio, ')')
+                end
+            else
+                ""
+            end
+        end
+        x.funcheader
+    catch e
+        Sugar.print_stack_trace(STDERR, x)
+        rethrow(e)
+    end
+end
+
+function Sugar.getfuncsource(x::GLMethods)
+    # TODO make this lazy as well?
+    sprint() do io
+        show_unquoted(CIO(io, x), Sugar.getast!(x), 0, 0)
+    end
 end

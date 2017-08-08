@@ -17,6 +17,11 @@ type GLIO{T <: IO} <: AbstractGLIO
     method::GLMethods
 end
 
+
+function (::Type{CIO})(io, m::GLMethod)
+    GLIO(io, m)
+end
+
 supports_overloading(io::GLIO) = true
 
 include("intrinsics.jl")
