@@ -8,12 +8,66 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 =#
 
-
 import Base: indent_width, uni_ops, expr_infix_wide
 import Base: all_ops, expr_calls, show_block
 import Base: show_list, show_enclosed_list, operator_precedence
 import Base: is_quoted, is_expr, expr_infix_any
 import Base: show_call, show_unquoted, show
+
+import Sugar: LazyMethod
+import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic
+import Sugar: typename, functionname, show_name, show_type, show_function
+import Sugar: supports_overloading, expr_type
+
+const CLMethod = LazyMethod{:CL}
+
+@compat abstract type AbstractCLIO <: CIO end
+
+immutable EmptyCLIO <: AbstractCLIO end
+
+type CLIO{T <: IO} <: AbstractCLIO
+    io::T
+    method::CLMethod
+end
+
+supports_overloading(io::CLIO) = false
+
+include("intrinsics.jl")
+include("rewriting.jl")
+
+
+function print_dependencies(io, method, visited = Set())
+    (method in visited) && return
+    push!(visited, method)
+    for elem in dependencies!(method)
+        print_dependencies(io, elem, visited)
+    end
+    isintrinsic(method) && return
+    println(io, "// ", method.signature)
+    println(io, getsource!(method))
+end
+
+"""
+Transpiles the source of a given function `f` for it's argument types `args` (Tuple{<})
+"""
+function kernel_source(f::Function, args::NTuple{N, <: DataType}) where N
+    method = CLMethod((f, args))
+    funcsource = getsource!(method)
+    # add compute program dependant infos
+    io = CLIO(IOBuffer(), method)
+    println(io, "// dependencies")
+    visited = Set()
+    for dep in dependencies!(method)
+        print_dependencies(io, dep, visited) # this is recursive but would print method itself
+    end
+    println(io, "// ########################")
+    println(io, "// Main inner function")
+    println(io, "// ", method.signature)
+    print(io, "__kernel ") # mark as kernel function
+    println(io, funcsource)
+    fname = string(Sugar.functionname(io, method))
+    String(take!(io.io)), method, fname
+end
 
 
 
