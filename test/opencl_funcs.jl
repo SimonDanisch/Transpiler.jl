@@ -3,6 +3,8 @@ using Base.Test
 import Transpiler: cli, CLMethod
 using Sugar: getsource!, dependencies!
 
+Transpiler.cli.get_global_id
+
 function mapkernel(f, a, b, c)
     gid = cli.get_global_id(0) + Cuint(1)
     c[gid] = f(a[gid], b[gid])
@@ -14,7 +16,8 @@ Transpiler.empty_caches!()
 
 args = (typeof(+), cli.CLArray{Float32, 1}, cli.CLArray{Float32, 1}, cli.CLArray{Float32, 1})
 cl_mapkernel = CLMethod((mapkernel, args))
-source = getsource!(cl_mapkernel)
+source = Sugar.getsource!(cl_mapkernel)
+println(source)
 mapsource = """void mapkernel_1(Base123 f, __global float * restrict  a, __global float * restrict  b, __global float * restrict  c)
 {
     uint gid;
