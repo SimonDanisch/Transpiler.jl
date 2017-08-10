@@ -1,6 +1,6 @@
 import Base: show
 
-using Sugar: LazyMethod, typename, functionname, print_dependencies
+using Sugar: LazyMethod, typename, functionname, print_dependencies, getsource!
 import Sugar: supports_overloading
 
 const CLMethod = LazyMethod{:CL}
@@ -63,7 +63,7 @@ function Sugar.gettypesource(x::CLMethod)
     tname = typename(EmptyCLIO(), T)
     str = if (!isleaftype(T) || T <: Type{X} where X) # emit type instances as singletons
         """typedef int $tname; // placeholder type instance
-        __constant $tname TYP_INST_$tname;
+        __constant $tname TYP_INST_$tname = 0;
         """
     else
         if isleaftype(T) && sizeof(T) == 0 && nfields(T) == 0
@@ -83,7 +83,7 @@ function Sugar.gettypesource(x::CLMethod)
                         FT = fieldtype(T, i)
                         print(io, "    ", typename(EmptyCLIO(), FT))
                         print(io, ' ')
-                        print(io, c_fieldname(T, i))
+                        print(io, c_fieldname(x, T, i))
                         println(io, ';')
                     end
                 end

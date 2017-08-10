@@ -75,13 +75,18 @@ function is_native_type(m::CLMethod, T)
     T <: cli.Types || is_fixedsize_array(m, T) || T <: Tuple{T} where T <: cli.Numbers
 end
 
-function isintrinsic(::CLMethod, func::ANY, sig_tuple::ANY)
+function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     # constructors are intrinsic. TODO more thorow lookup to match actual inbuild constructor
     isa(func, DataType) && return true
     func == tuple && return true # TODO match against all Base intrinsics?
+    func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
+    func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
+    # shared intrinsic functions should all work on all native types.
+    # TODO, find exceptions where this isn't true
+    func in functions && all(x-> is_native_type(m, x), Sugar.to_tuple(sig_tuple)) && return true
     haskey(cli.intrinsic_signatures, func) || return false
     sig = cli.intrinsic_signatures[func]
-    sig <: sig_tuple
+    sig_tuple <: sig
 end
 
 function isintrinsic(x::CLMethod)
@@ -139,7 +144,9 @@ supports_indexing(m::LazyMethod, ::Type{<: CLDeviceArray}) = true
 function supports_indices(m::LazyMethod, ::Type{<: CLDeviceArray}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
-
+function supports_indices(m::LazyMethod, ::Type{<: Tuple}, index_types)
+    length(index_types) == 1 && index_types[1] <: Integer
+end
 
 
 function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
@@ -156,7 +163,7 @@ function typename{T}(io::AbstractCLIO, x::Type{cli.LocalMemory{T}})
     "__local $tname * "
 end
 
-function vecname{T}(io::AbstractCLIO, t::Type{T})
+function Sugar.vecname(io::AbstractCLIO, t::Type{T}) where T
     N = fixed_array_length(T)
     return string(typename(io, eltype(T)), N)
 end

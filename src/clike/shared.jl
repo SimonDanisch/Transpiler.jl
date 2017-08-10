@@ -132,8 +132,10 @@ is_ntuple{N, T}(x::Type{NTuple{N, T}}) = true
 
 const vector_lengths = (2, 3, 4, 8, 16)
 
+# This IO thing gets annoying! TODO, remove IO as dispatch object and use exclusively LazyMethods
 
-function is_fixedsize_array{T}(m::LazyMethod, ::Type{T})
+is_fixedsize_array{T}(::Type{T}) = is_fixedsize_array(nothing, T)
+function is_fixedsize_array{T}(m, ::Type{T})
     (T <: StaticVector || is_ntuple(T)) &&
     fixed_array_length(T) in vector_lengths &&
     eltype(T) <: Numbers
@@ -144,6 +146,7 @@ global replace_unsupported, empty_replace_cache!
 let _unsupported_id = 0
     const unsupported_replace_dict = Dict{Char, String}()
     function empty_replace_cache!()
+        _unsupported_id = 0
         empty!(unsupported_replace_dict)
         return
     end
@@ -206,7 +209,7 @@ function _typename(io::IO, x)
         elseif T <: Type
             # make names unique when it was a type of Type{X}
             string(T)
-        elseif is_fixedsize_array(T)
+        elseif is_fixedsize_array(io, T)
             Sugar.vecname(io, T)
         elseif T <: Tuple
 
@@ -255,8 +258,13 @@ _typename{T}(io::IO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
 _typename{F <: Function}(io::CIO, f::F) = _typename(io, F.name.mt.name)
 _typename{F <: Function}(io::CIO, f::Type{F}) = string(F)
 
-global signature_hash
+global signature_hash, empty_hash_dict!
 let hash_dict = Dict{Any, Int}(), counter = 0
+    function empty_hash_dict!()
+        empty!(hash_dict)
+        counter = 0
+        return
+    end
     """
     Returns a unique ID for a type signature, which is as small as possible!
     """
@@ -307,12 +315,12 @@ end
 
 function c_fieldname(m::LazyMethod, T, i::Integer)
     str = if isleaftype(T)
-        name = if is_fixedsize_array(T)
+        name = if is_fixedsize_array(m, T)
             fixed_size_array_fieldname(m, T, i)
         else
             Base.fieldname(T, i)
         end
-        return if isa(name, Integer) # for types without fieldnames (Tuple)
+        if isa(name, Integer) # for types without fieldnames (Tuple)
             "field$name"
         else
             symbol_hygiene(EmptyCIO(), name)
@@ -359,6 +367,11 @@ end
 
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
 function show_call(io::CIO, head, func, func_args, indent)
+    if head == :curly && Sugar.expr_type(func) <: Type# typeconstructors
+        print(io, "TYP_INST_") # use the global constant instance of the type
+        show_unquoted(io, func, indent)
+        return
+    end
     op, cl = expr_calls[head]
     print(io, '(')
     if head == :ref
@@ -660,3 +673,5 @@ function Sugar.getfuncsource(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
         show_unquoted(CIO(io, x), Sugar.getast!(x), 0, 0)
     end
 end
+
+include("rewriting.jl")

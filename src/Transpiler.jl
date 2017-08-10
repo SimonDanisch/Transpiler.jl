@@ -13,6 +13,7 @@ include("clike/opencl/printing.jl")
 
 function empty_caches!()
     empty_replace_cache!()
+    empty_hash_dict!()
     return
 end
 

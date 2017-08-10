@@ -98,7 +98,7 @@ function glintrinsic{F <: Function}(f::F, types::Tuple)
     # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
     if f == broadcast
         BF = types[1]
-        if BF <: Functions && all(T-> T <: Types || is_fixedsize_array(T), types[2:end])
+        if BF <: cli.Functions && all(T-> T <: Types || is_fixedsize_array(T), types[2:end])
             return true
         end
     end
@@ -112,7 +112,7 @@ function glintrinsic{F <: Function}(f::F, types::Tuple)
     m = methods(f)
     isempty(m) && return false
     sym = first(m).name
-    (F <: Functions && all(T-> T <: Types || is_fixedsize_array(T), types)) || (
+    (F <: cli.Functions && all(T-> T <: Types || is_fixedsize_array(T), types)) || (
         # if any intrinsic funtion stub matches
         isdefined(GLIntrinsics, sym) &&
         Base.binding_module(GLIntrinsics, sym) == GLIntrinsics &&

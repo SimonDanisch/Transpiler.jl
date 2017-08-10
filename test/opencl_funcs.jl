@@ -3,8 +3,6 @@ using Base.Test
 import Transpiler: cli, CLMethod
 using Sugar: getsource!, dependencies!
 
-Transpiler.cli.get_global_id
-
 function mapkernel(f, a, b, c)
     gid = cli.get_global_id(0) + Cuint(1)
     c[gid] = f(a[gid], b[gid])
@@ -17,7 +15,6 @@ Transpiler.empty_caches!()
 args = (typeof(+), cli.CLArray{Float32, 1}, cli.CLArray{Float32, 1}, cli.CLArray{Float32, 1})
 cl_mapkernel = CLMethod((mapkernel, args))
 source = Sugar.getsource!(cl_mapkernel)
-println(source)
 mapsource = """void mapkernel_1(Base123 f, __global float * restrict  a, __global float * restrict  b, __global float * restrict  c)
 {
     uint gid;
@@ -27,6 +24,7 @@ mapsource = """void mapkernel_1(Base123 f, __global float * restrict  a, __globa
     (c)[gid - 0x00000001] = _ssavalue_0;
     ;
 }"""
+
 @testset "map kernel" begin
     @test source == mapsource
     deps = dependencies!(cl_mapkernel, true)
@@ -133,3 +131,86 @@ target_source = """float fortest_6(float x)
     return acc;
 }"""
 @test target_source == source
+
+
+function custom_index_test(x)
+    x[1, 1]
+end
+
+source, method, name = Transpiler.kernel_source(custom_index_test, (typeof(1f0*I),))
+
+source_compare = """// dependencies
+// UniformScaling{Float32}
+struct  __attribute__ ((packed)) TYPUniformScaling_float{
+    float x4;
+};
+typedef struct TYPUniformScaling_float UniformScaling_float;
+
+// (oftype, Tuple{Float32,Int64})
+float oftype_9(float x, int c)
+{
+    return (float)(c);
+}
+// (zero, Tuple{Float32})
+float zero_6(float x)
+{
+    return (oftype_9)(x, 0);
+}
+// (getindex, Tuple{UniformScaling{Float32},Int64,Int64})
+float getindex_7(UniformScaling_float J, int i, int j)
+{
+    return (select)(J.x4, (zero_6)(J.x4), i == j);
+}
+// ########################
+// Main inner function
+// (custom_index_test, (UniformScaling{Float32},))
+__kernel float custom_index_test_8(UniformScaling_float x)
+{
+    return (getindex_7)(x, 1, 1);
+}
+"""
+@test source_compare == source
+
+inner(i) = Float32(i) * 77f0
+function ntuple_test(::Val{N}) where N
+    ntuple(inner, Val{N})
+end
+
+source, method, name = Transpiler.kernel_source(ntuple_test, (Val{4},))
+
+compare_source = """// dependencies
+// Val{4}
+typedef int Val_4; // empty type emitted as an int
+// #inner
+typedef int x2inner; // empty type emitted as an int
+// Any
+typedef int Any; // placeholder type instance
+__constant Any TYP_INST_Any = 0;
+
+// (inner, Tuple{Int64})
+float inner_12(int i)
+{
+    return (float){i} * 77.0f;
+}
+// (ntuple, Tuple{#inner,Type{Val{4}}})
+float4 ntuple_10(x2inner f, Type5Val5466 x2unused2)
+{
+    return (float4){(inner_12)(1), (inner_12)(2), (inner_12)(3), (inner_12)(4)};
+}
+// Type{Val{4}}
+typedef int Type5Val5466; // placeholder type instance
+__constant Type5Val5466 TYP_INST_Type5Val5466 = 0;
+
+// Type{Val}
+typedef int Type5Val6; // placeholder type instance
+__constant Type5Val6 TYP_INST_Type5Val6 = 0;
+
+// ########################
+// Main inner function
+// (ntuple_test, (Val{4},))
+__kernel float4 ntuple_test_11(Val_4 x2unused2)
+{
+    return (ntuple_10)(inner, TYP_INST_Type5Val5466);
+}
+"""
+@test compare_source == source
