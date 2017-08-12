@@ -9,7 +9,7 @@ import ..Transpiler: ret, vecs, Vecs, vector_lengths, functions
 
 using StaticArrays, Sugar
 import Sugar: typename, vecname
-using SpecialFunctions: erf
+using SpecialFunctions: erf, erfc
 
 # TODO, these are rather global pointers and this should be represented in the type
 immutable CLArray{T, N} <: AbstractArray{T, N} end
@@ -59,6 +59,9 @@ end
 
 @cl_intrinsic barrier(::Cuint) = nothing
 @cl_intrinsic mem_fence(::Cuint) = nothing
+
+@cl_intrinsic erfc(::T) where T <: Floats = ret(T)
+@cl_intrinsic erf(::T) where T <: Floats = ret(T)
 
 
 end # end CLIntrinsics

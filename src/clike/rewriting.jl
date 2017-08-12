@@ -90,69 +90,66 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     types = Sugar.to_tuple(_types)
     li = method.parent
     F = typeof(f)
-    try
-        # first give the backends a chance to do backend specific rewriting
-        rewritten, expr = rewrite_backend_specific(method, f, types, expr)
-        rewritten && return expr
-        # if nothing got rewritten, do the backend independant rewrites:
-        if f in (getindex, setindex!)
-            return index_expression(method, expr, expr.args[2:end], types)
-        elseif f == getfield && length(types) == 2 && types[2] <: Integer
-            return emit_call(
-                method, getfield,
-                Sugar.expr_type(method, expr),
-                expr.args[1], c_fieldname(method, types[1], expr.args[2])
-            )
-        elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
-            # if we have a static indexed next, we unfold it into a a getindex directly
-            expr.args = expr.args[1:3]
-            types = types[1:2]
-            replaceit, replacement = getindex_replace(li, expr, types)
-            replaceit && return replacement
-        elseif f == convert && length(types) == 2
-            # BIG TODO, this changes semantic!!!! DONT
-            if types[1] == Type{types[2]}
-                return expr.args[3] # no convert needed
-            else # But for now we just change a convert into a constructor call
-                t = Sugar.rewrite_ast(li, expr.args[2])
-                return similar_expr(expr, [t, expr.args[3:end]...])
-            end
-        # Constructors
-        elseif F <: Type || f == tuple
-            realtype = Sugar.expr_type(li, expr)
-            args = expr.args[2:end]
-            if isempty(args) && sizeof(realtype) == 0
-                push!(args, 0f0) # there are no empty types, so if empty, insert default
-            end
-            # C/Opencl uses curly braces for constructors
-            constr_m = LazyMethod(li, realtype)
-            return emit_constructor(constr_m, realtype, args)
-        elseif f == broadcast
-            BF = types[1]
-            fb = Sugar.resolve_func(li, expr.args[1]) # rewrite if necessary
-            # most shared intrinsics broadcast over fixedsize arrays
-            if (fb in functions) && all(T-> T <: cli.Types || is_fixedsize_array(T), types[2:end])
-                shift!(expr.args) # remove broadcast from call expression
-                expr.args[1] = LazyMethod(li, fb, types[2:end])
-                return expr
-            end
-            return expr
-        # div is / in c like languages
-        elseif f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
-            expr.args[1] = LazyMethod(li, (/), types)
-            return expr
-        # Base.^ is pow in C
-        elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
-            expr.args[1] = LazyMethod(li, pow, types)
-            return expr
-        elseif F <: Function
-            expr.args[1] = method
+    # first give the backends a chance to do backend specific rewriting
+    rewritten, expr = rewrite_backend_specific(method, f, types, expr)
+    rewritten && return expr
+    # if nothing got rewritten, do the backend independant rewrites:
+    if f in (getindex, setindex!)
+        return index_expression(method, expr, expr.args[2:end], types)
+    elseif f == getfield && length(types) == 2 && types[2] <: Integer
+        return emit_call(
+            method, getfield,
+            Sugar.expr_type(method, expr),
+            expr.args[1], c_fieldname(method, types[1], expr.args[2])
+        )
+    elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
+        # if we have a static indexed next, we unfold it into a a getindex directly
+        expr.args = expr.args[1:3]
+        types = types[1:2]
+        replaceit, replacement = getindex_replace(li, expr, types)
+        replaceit && return replacement
+    elseif f == convert && length(types) == 2
+        # BIG TODO, this changes semantic!!!! DONT
+        if types[1] == Type{types[2]}
+            return expr.args[3] # no convert needed
+        else # But for now we just change a convert into a constructor call
+            t = Sugar.rewrite_ast(li, expr.args[2])
+            return similar_expr(expr, [t, expr.args[3:end]...])
+        end
+    # Constructors
+    elseif F <: Type || f == tuple
+        realtype = Sugar.expr_type(li, expr)
+        args = expr.args[2:end]
+        if isempty(args) && sizeof(realtype) == 0
+            push!(args, 0f0) # there are no empty types, so if empty, insert default
+        end
+        # C/Opencl uses curly braces for constructors
+        constr_m = LazyMethod(li, realtype)
+        return emit_constructor(constr_m, realtype, args)
+    elseif f == broadcast
+        fb = Sugar.resolve_func(li, expr.args[2]) # rewrite if necessary
+        @show(fb)
+        # most shared intrinsics broadcast over fixedsize arrays
+        if (fb in functions) && all(t-> is_native_type(li, t), types[2:end])
+            @show expr.args
+            shift!(expr.args) # remove broadcast from call expression
+            @show types[2:end]
+            expr.args[1] = LazyMethod(li, fb, types[2:end])
+            @show expr
             return expr
         end
-    catch e
-        Sugar.print_stack_trace(STDERR, li)
-        println(STDERR, ">>>CODE: ")
-        println(STDERR, Sugar.sugared(li.signature..., code_typed))
-        rethrow(e)
+        return expr
+    # div is / in c like languages
+    elseif f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
+        expr.args[1] = LazyMethod(li, (/), types)
+        return expr
+    # Base.^ is pow in C
+    elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
+        expr.args[1] = LazyMethod(li, pow, types)
+        return expr
+    elseif F <: Function
+        expr.args[1] = method
+        return expr
     end
+    return expr
 end

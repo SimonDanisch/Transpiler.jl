@@ -16,7 +16,6 @@ import Base: show_call, show_unquoted, show
 
 import Sugar: ASTIO, LazyMethod, typename, functionname, _typename, show_name
 import Sugar: supports_overloading, show_type, show_function
-import SpecialFunctions: erf, erfc
 
 @compat abstract type CIO <: ASTIO end
 immutable EmptyCIO <: CIO
