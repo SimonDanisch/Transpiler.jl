@@ -64,6 +64,16 @@ end
 @cl_intrinsic erf(::T) where T <: Floats = ret(T)
 
 
+for N in vector_lengths
+    fload = Symbol(string("vload", N))
+    fstore = Symbol(string("vstore", N))
+    @eval begin
+        @cl_intrinsic $(fload)(i::Integer, a::CLArray{T, N}) where {T <: Numbers, N} = ret(NTuple{$N, T})
+        @cl_intrinsic $(fstore)(x::NTuple{$N, T}, i::Integer, a::CLArray{T, N}) where {T <: Numbers, N} = nothing
+    end
+end
+
+
 end # end CLIntrinsics
 
 
@@ -112,26 +122,12 @@ for VecType in (NTuple, SVector)
         fload = Symbol(string("vload", N))
         fstore = Symbol(string("vstore", N))
         VType = :($VecType{$N, T})
-        if VecType == NTuple
-            @eval begin
-                $(fload){T <: cli.Numbers, N}(i::Integer, a::CLArray{T, N}) = cli.ret(NTuple{$N, T})
-                $(fstore){T <: cli.Numbers, N}(x::$VType, i::Integer, a::CLArray{T, N}) = nothing
-                # function cli.clintrinsic(f::typeof($fstore), types::Tuple)
-                #     length(types) == 3 || return false
-                #     is_fixedsize_array(types[1]) && types[2] <: Integer && types[3] <: CLArray
-                # end
-                # function cli.clintrinsic(f::typeof($fload), types::Tuple)
-                #     length(types) == 2 || return false
-                #     types[1] <: Integer && types[2] <: CLArray
-                # end
-            end
-        end
         @eval begin
-            function vload{T <: cli.Numbers, N}(::Type{$VType}, a::CLArray{$VType, N}, i::Integer)
-                $VType($(fload)(i - 1, CLArray{T, N}(a)))
+            function vload{T <: cli.Numbers, N, IT <: Integer}(::Type{$VType}, a::CLArray{$VType, N}, i::IT)
+                $VType(cli.$(fload)(i - IT(1), CLArray{T, N}(a)))
             end
-            function vstore{T <: cli.Numbers, N}(x::$VType, a::CLArray{$VType, N}, i::Integer)
-                $(fstore)(x, i - 1, CLArray{T, N}(a))
+            function vstore{T <: cli.Numbers, N, IT <: Integer}(x::$VType, a::CLArray{$VType, N}, i::IT)
+                cli.$(fstore)(Tuple(x), i - IT(1), CLArray{T, N}(a))
             end
         end
     end
@@ -144,7 +140,11 @@ end
 
 supports_indexing(m::LazyMethod, ::Type{<: CLDeviceArray}) = true
 
-function supports_indices(m::LazyMethod, ::Type{<: CLDeviceArray}, index_types)
+function supports_indices(m::LazyMethod, ::Type{ <: CLArray{T, N}}, index_types) where {T, N}
+    is_fixedsize_array(m, T) && return false # fixed size arrays are implemented via vstore/load
+    length(index_types) == 1 && index_types[1] <: Integer
+end
+function supports_indices(m::LazyMethod, ::Type{ <: CLDeviceArray}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
 function supports_indices(m::LazyMethod, ::Type{<: Tuple}, index_types)
@@ -153,10 +153,6 @@ end
 
 
 function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
-    if !(N in (1, 2, 3))
-        # TODO, fake ND arrays with 1D array
-        error("GPUArray can't have more than 3 dimensions for now")
-    end
     tname = typename(io, T)
     # restrict should be fine for now, since we haven't implemented views yet!
     "__global $tname * restrict "

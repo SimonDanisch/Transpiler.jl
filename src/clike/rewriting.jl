@@ -111,10 +111,16 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     elseif f == convert && length(types) == 2
         # BIG TODO, this changes semantic!!!! DONT
         if types[1] == Type{types[2]}
-            return expr.args[3] # no convert needed
+            return Sugar.rewrite_ast(li, expr.args[3]) # no convert needed
         else # But for now we just change a convert into a constructor call
-            t = Sugar.rewrite_ast(li, expr.args[2])
-            return similar_expr(expr, [t, expr.args[3:end]...])
+            realtype = Sugar.unspecialized_type(Sugar.expr_type(li, expr.args[2]))
+            target_type = Sugar.unspecialized_type(Sugar.expr_type(li, expr.args[3]))
+            if is_native_type(li, realtype) && is_native_type(li, target_type)
+                constr_m = LazyMethod(li, realtype)
+                return emit_constructor(constr_m, realtype, expr.args[3:end])
+            else
+                return emit_call(li, convert, realtype, realtype, expr.args[3])
+            end
         end
     # Constructors
     elseif F <: Type || f == tuple
@@ -128,14 +134,10 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         return emit_constructor(constr_m, realtype, args)
     elseif f == broadcast
         fb = Sugar.resolve_func(li, expr.args[2]) # rewrite if necessary
-        @show(fb)
         # most shared intrinsics broadcast over fixedsize arrays
         if (fb in functions) && all(t-> is_native_type(li, t), types[2:end])
-            @show expr.args
             shift!(expr.args) # remove broadcast from call expression
-            @show types[2:end]
             expr.args[1] = LazyMethod(li, fb, types[2:end])
-            @show expr
             return expr
         end
         return expr

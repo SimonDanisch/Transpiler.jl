@@ -66,9 +66,16 @@ function Sugar.gettypesource(x::CLMethod)
         __constant $tname TYP_INST_$tname = 0;
         """
     else
-        if isleaftype(T) && sizeof(T) == 0 && nfields(T) == 0
+        if T <: Symbol # ignore for now?
+            return ""
+        elseif isleaftype(T) && sizeof(T) == 0 && nfields(T) == 0
             # emit empty types as Int32, since struct can't be empty
-            return "typedef int $tname; // empty type emitted as an int"
+
+            str = "typedef int $tname; // empty type emitted as an int"
+            if T <: Sugar.AllFuncs
+                str = "__constant int FUNC_INST_$tname = 0;\n" * str
+            end
+            return str
         else
             sprint() do io
                 print(io, "struct  __attribute__ ((packed)) TYP$tname{\n")

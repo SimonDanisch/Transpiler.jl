@@ -187,7 +187,7 @@ function symbol_hygiene(io::IO, sym)
     String(take!(res_io))
 end
 
-typename(io::IO, x) = Symbol(symbol_hygiene(io, _typename(io, x)))
+typename(io::CIO, x) = Symbol(symbol_hygiene(io, _typename(io, x)))
 
 
 
@@ -353,15 +353,20 @@ show_linenumber(io::CIO, line) = show_comment(io, " line $line:")
 show_linenumber(io::CIO, line, file) = show_comment(io, "$file $line $line")
 
 
-function show(io::CIO, x::DataType)
+function show(io::CIO, x::Type)
     print(io, string("TYP_INST_", typename(io, Type{x})))
 end
-
+function show_unquoted(io::CIO, x::Type, ::Int, ::Int)
+    print(io, string("TYP_INST_", typename(io, Type{x})))
+end
 function show_unquoted(io::CIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
 end
 function show_unquoted(io::CIO, ssa::SSAValue, ::Int, ::Int)
     print(io, Sugar.ssavalue_name(ssa))
+end
+function show_unquoted(io::CIO, f::F, ::Int, ::Int) where F <: Sugar.AllFuncs
+    print(io, "FUNC_INST_", typename(io, F))
 end
 
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
@@ -601,17 +606,14 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
 
     elseif head === :return
         if length(args) == 1
-            # empty return (i.e. "function f() return end")
-            if isa(args[1], Expr) && (args[1].typ == Void || args[1] === nothing)
-                # ignore empty return / return nothing
-            else
+            if !(isa(args[1], Expr) && (args[1].typ == Void || args[1] === nothing))
+                # if returns void, we need to omit the return statement
                 print(io, "return ")
-                show_unquoted(io, args[1])
             end
-        elseif isempty(args)
-            # ignore return if no args or void
+            show_unquoted(io, args[1])
         else
-            error("Unknown return Expr: $ex")
+            # ignore if empty, otherwise, LOL? What's a return with multiple args?
+            isempty(args) || error("Unknown return Expr: $ex")
         end
     elseif (head in (:meta, :inbounds))
         # TODO, just ignore this? Log this? We definitely don't need it in GLSL
@@ -634,36 +636,31 @@ function show_typed_list(io, list, seperator, intent)
 end
 
 function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
-    try
-        if !isdefined(x, :funcheader)
-            x.funcheader = if Sugar.isfunction(x)
-                sprint() do io
-                    args = Sugar.getfuncargs(x)
-                    glio = CIO(io, x)
-                    show_type(glio, Sugar.returntype(x))
-                    print(glio, ' ')
-                    show_unquoted(glio, x)
-                    print(glio, '(')
-                    for (i, elem) in enumerate(args)
-                        if i != 1
-                            print(glio, ", ")
-                        end
-                        name, T = elem.args
-                        show_type(glio, T)
-                        print(glio, ' ')
-                        show_name(glio, name)
+    if !isdefined(x, :funcheader)
+        x.funcheader = if Sugar.isfunction(x)
+            sprint() do io
+                args = Sugar.getfuncargs(x)
+                glio = CIO(io, x)
+                show_type(glio, Sugar.returntype(x))
+                print(glio, ' ')
+                show_unquoted(glio, x)
+                print(glio, '(')
+                for (i, elem) in enumerate(args)
+                    if i != 1
+                        print(glio, ", ")
                     end
-                    print(glio, ')')
+                    name, T = elem.args
+                    show_type(glio, T)
+                    print(glio, ' ')
+                    show_name(glio, name)
                 end
-            else
-                ""
+                print(glio, ')')
             end
+        else
+            ""
         end
-        x.funcheader
-    catch e
-        Sugar.print_stack_trace(STDERR, x)
-        rethrow(e)
     end
+    x.funcheader
 end
 
 function Sugar.getfuncsource(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
