@@ -100,7 +100,7 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         return emit_call(
             method, getfield,
             Sugar.expr_type(method, expr),
-            expr.args[1], c_fieldname(method, types[1], expr.args[2])
+            expr.args[1], c_fieldname(method, types[1], expr.args[3])
         )
     elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
         # if we have a static indexed next, we unfold it into a a getindex directly

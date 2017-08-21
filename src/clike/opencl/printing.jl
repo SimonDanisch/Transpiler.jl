@@ -60,7 +60,10 @@ end
 
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
+    # TODO, do something about void! It's the same as the intrinsic void for return types
+    # but gets used completely different in Julia -E.g. in OpenCL it's not possible to have an instance of type void
     tname = typename(EmptyCLIO(), T)
+
     str = if (!isleaftype(T) || T <: Type{X} where X) # emit type instances as singletons
         """typedef int $tname; // placeholder type instance
         __constant $tname TYP_INST_$tname = 0;
@@ -70,7 +73,6 @@ function Sugar.gettypesource(x::CLMethod)
             return ""
         elseif isleaftype(T) && sizeof(T) == 0 && nfields(T) == 0
             # emit empty types as Int32, since struct can't be empty
-
             str = "typedef int $tname; // empty type emitted as an int"
             if T <: Sugar.AllFuncs
                 str = "__constant int FUNC_INST_$tname = 0;\n" * str

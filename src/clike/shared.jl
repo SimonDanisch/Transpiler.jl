@@ -115,7 +115,7 @@ const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
     sin, tan, sqrt, cos, mod, round, floor, fract, log, atan2, atan, max, min,
     abs, pow, log10, exp, normalize, cross, dot, smoothstep, mix, norm,
-    length, clamp, cospi, sinpi, asin, fma, fabs, sizeof
+    length, clamp, cospi, sinpi, asin, fma, fabs, sizeof, isinf, isnan
 )
 
 function fixed_array_length(T)
@@ -243,7 +243,6 @@ end
 _typename(io::CIO, x::Union{AbstractString, Symbol}) = x
 
 _typename{T <: Number}(io::IO, x::Type{Tuple{T}}) = _typename(io, T)
-_typename(io::IO, x::Type{Void}) = "void"
 _typename(io::IO, x::Type{Float64}) = "float"
 _typename(io::IO, x::Type{Float32}) = "float"
 _typename(io::IO, x::Type{Int}) = "int"
@@ -635,13 +634,24 @@ function show_typed_list(io, list, seperator, intent)
     end
 end
 
+function show_returntype(io, method)
+    T = Sugar.returntype(method)
+    # void can only be used for return types in C, but in Julia it's used for all sorts of things
+    # so we special case the return type and otherwise treat Void not as an inbuild.
+    if T == Void
+        print(io, "void")
+    else
+        show_type(io, T)
+    end
+    return
+end
 function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
     if !isdefined(x, :funcheader)
         x.funcheader = if Sugar.isfunction(x)
             sprint() do io
                 args = Sugar.getfuncargs(x)
                 glio = CIO(io, x)
-                show_type(glio, Sugar.returntype(x))
+                show_returntype(glio, x)
                 print(glio, ' ')
                 show_unquoted(glio, x)
                 print(glio, '(')
