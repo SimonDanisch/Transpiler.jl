@@ -212,12 +212,12 @@ function _typename(io::IO, x)
             Sugar.vecname(io, T)
         elseif T <: Tuple
 
-            str = if !isempty(T.parameters)
+            str = if (isempty(T.parameters) || T == Tuple)
+                "EmptyTuple"
+            else
                 str = "Tuple_"
                 tstr = map(x-> typename(io, x), T.parameters)
                 str *= join(tstr, "_")
-            else
-                "EmptyTuple"
             end
             str
         else

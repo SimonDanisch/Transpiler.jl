@@ -140,6 +140,8 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
             expr.args[1] = LazyMethod(li, fb, types[2:end])
             return expr
         end
+        expr.args[1] = method
+        expr.args[2] = LazyMethod(li, fb, types[2:end])
         return expr
     # div is / in c like languages
     elseif f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
