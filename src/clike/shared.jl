@@ -135,9 +135,10 @@ const vector_lengths = (2, 3, 4, 8, 16)
 
 is_fixedsize_array{T}(::Type{T}) = is_fixedsize_array(nothing, T)
 function is_fixedsize_array{T}(m, ::Type{T})
-    (T <: StaticVector || is_ntuple(T)) &&
-    fixed_array_length(T) in vector_lengths &&
-    eltype(T) <: Numbers
+    ((T <: StaticVector || is_ntuple(T)) &&
+    fixed_array_length(T) in vector_lengths) || return false
+    et = eltype(T)
+    isa(et, DataType) && et <: Numbers
 end
 
 # Functionality to remove unsupported characters from the source
@@ -211,10 +212,16 @@ function _typename(io::IO, x)
         elseif is_fixedsize_array(io, T)
             Sugar.vecname(io, T)
         elseif T <: Tuple
-
-            str = if !isempty(T.parameters)
+            params = (T.parameters...,)
+            str = if !isempty(params)
                 str = "Tuple_"
-                tstr = map(x-> typename(io, x), T.parameters)
+                tstr = map(params) do x
+                    if isa(x, DataType)
+                        typename(io, x)
+                    else
+                        string(x)
+                    end
+                end
                 str *= join(tstr, "_")
             else
                 "EmptyTuple"
@@ -321,7 +328,7 @@ function c_fieldname(m::LazyMethod, T, i::Integer)
         if isa(name, Integer) # for types without fieldnames (Tuple)
             "field$name"
         else
-            symbol_hygiene(EmptyCIO(), name)
+            symbol_hygiene(CIO(IOBuffer(), m), name)
         end
     else
         error("Found abstract type: $T")
@@ -329,7 +336,7 @@ function c_fieldname(m::LazyMethod, T, i::Integer)
     Symbol(str)
 end
 
-function typed_type_fields(T)
+function typed_type_fields(io, T)
     nf = nfields(T)
     fields = []
     if nf == 0 # structs can't be empty
@@ -339,8 +346,8 @@ function typed_type_fields(T)
     else
         for i in 1:nf
             FT = fieldtype(T, i)
-            tname = typename(EmptyCIO(), FT)
-            fname = c_fieldname(T, i)
+            tname = typename(io, FT)
+            fname = c_fieldname(io.method, T, i)
             push!(fields, :($fname::$tname))
         end
     end

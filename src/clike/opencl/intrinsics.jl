@@ -138,16 +138,19 @@ function Base.setindex!{T <: Vecs}(a::CLArray{T}, value::T, i::Integer)
     vstore(value, a, i)
 end
 
-supports_indexing(m::LazyMethod, ::Type{<: CLDeviceArray}) = true
+function supports_indexing(m::CLMethod, ::Type{T}) where T
+    T <: CLDeviceArray && return true
+    false
+end
 
-function supports_indices(m::LazyMethod, ::Type{ <: CLArray{T, N}}, index_types) where {T, N}
+function supported_indices(m::CLMethod, ::Type{ <: CLArray{T, N}}, index_types) where {T, N}
     is_fixedsize_array(m, T) && return false # fixed size arrays are implemented via vstore/load
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supports_indices(m::LazyMethod, ::Type{ <: CLDeviceArray}, index_types)
+function supported_indices(m::CLMethod, ::Type{ <: CLDeviceArray}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supports_indices(m::LazyMethod, ::Type{<: Tuple}, index_types)
+function supported_indices(m::CLMethod, ::Type{<: Tuple}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
 

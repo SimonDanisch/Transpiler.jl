@@ -16,12 +16,8 @@ They'll be addressable via getindex, but in another language it must be getfield
 """
 supports_indexing(m::LazyMethod, T) = false
 
-"""
-Types that are only indexable via static indices.
-"""
-needs_static_index(m::LazyMethod, T) = true
 
-supports_indices(m::LazyMethod, T, index_types) = false
+supported_indices(m::LazyMethod, T, index_types) = false
 
 to_index(m, t, idx::T) where T <: Integer = (idx - T(1))
 function to_index(m, T, idx)
@@ -58,7 +54,7 @@ function index_expression(m, expr, args, types)
         # and still have fast Tuple{N, <: Numbers} types.
         return Sugar.rewrite_ast(mparent, expr.args[2])
     end
-    if supports_indices(mparent, T, index_types)
+    if supported_indices(mparent, T, index_types)
         indices = rewrite_indices(mparent, T, indices)
         ret = if supports_indexing(mparent, T)
             indexing = typed_expr(expr.typ, :ref, args[1], indices...)
@@ -98,16 +94,17 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         return index_expression(method, expr, expr.args[2:end], types)
     elseif f == getfield && length(types) == 2 && types[2] <: Integer
         return emit_call(
-            method, getfield,
+            li, getfield,
             Sugar.expr_type(method, expr),
-            expr.args[1], c_fieldname(method, types[1], expr.args[3])
+            expr.args[2], c_fieldname(method, types[1], expr.args[3])
         )
     elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
         # if we have a static indexed next, we unfold it into a a getindex directly
         expr.args = expr.args[1:3]
         types = types[1:2]
-        replaceit, replacement = getindex_replace(li, expr, types)
-        replaceit && return replacement
+        rexpr = index_expression(method, expr, expr.args[2:end], types)
+        println(rexpr)
+        return rexpr
     elseif f == convert && length(types) == 2
         # BIG TODO, this changes semantic!!!! DONT
         if types[1] == Type{types[2]}

@@ -10,27 +10,31 @@ end
 
 function Sugar.gettypesource(x::GLMethods)
     T = x.signature
-    tname = typename(EmptyCIO(), T)
+    glio = GLIO(IOBuffer(), x)
+    tname = typename(glio, T)
+    uninstanciable = T <: Tuple && any(x-> !isa(x, DataType), T.parameters) # can't be instantiated
     sprint() do io
-        println(io, "// Julia name: $T")
-        print(io, "struct $tname{\n")
-        nf = nfields(T)
-        fields = []
-        if nf == 0 # structs can't be empty
-            # we use bool as a short placeholder type.
-            # TODO, are there cases where bool is no good?
-            println(io, "    float empty; // structs can't be empty")
-        else
-            for i in 1:nf
-                FT = fieldtype(T, i)
-                print(io, "    ", typename(EmptyCIO(), FT))
-                print(io, ' ')
-                print(io, c_fieldname(T, i))
-                println(io, ';')
+        if !uninstanciable
+            println(io, "// Julia name: $T")
+            print(io, "struct $tname{\n")
+            nf = nfields(T)
+            fields = []
+            if nf == 0 # structs can't be empty
+                # we use bool as a short placeholder type.
+                # TODO, are there cases where bool is no good?
+                println(io, "    float empty; // structs can't be empty")
+            else
+                for i in 1:nf
+                    FT = fieldtype(T, i)
+                    print(io, "    ", typename(glio, FT))
+                    print(io, ' ')
+                    print(io, c_fieldname(x, T, i))
+                    println(io, ';')
+                end
             end
+            println(io, "};")
         end
-        println(io, "};")
-        if (!isleaftype(T) || T <: Type) # emit type instances as singletons
+        if (!isleaftype(T) || T <: Type || uninstanciable) # emit type instances as singletons
             println(io, "const $tname TYP_INST_$tname;")
         end
     end
@@ -44,7 +48,7 @@ function glsl_gensym(name)
 end
 
 function show_vertex_input(io, T, name, start_idx = 0)
-    args = typed_type_fields(T)
+    args = typed_type_fields(io, T)
     idx = start_idx
     for arg in args
         fname, T = arg.args
@@ -139,17 +143,25 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     RT = Sugar.returntype(m)
 
     vertex_type = first(arguments)
-    vertex_name = snames[2]
-
+    vertex_name = snames[1]
     arg_types = arguments[2:end]
-    arg_names = snames[3:nargs]
-
+    arg_names = snames[2:(nargs - 1)]
     # get body ast
     Sugar.getcodeinfo!(m) # make sure codeinfo is present
     ast = Sugar.sugared(m.signature..., code_typed)
-    for i in (nargs + 1):length(stypes)
+    # for (i, (T, name)) in enumerate(st)
+    #     slot = TypedSlot(i + 1, T)
+    #     push!(x.decls, slot)
+    #     push!(x, T)
+    #     if i + 1 > nargs # if not defined in arguments, define in body
+    #         tmp = :($name::$T)
+    #         tmp.typ = T
+    #         unshift!(expr.args, tmp)
+    #     end
+    # end
+    for i in nargs:length(stypes)
         T = stypes[i]
-        slot = SlotNumber(i)
+        slot = TypedSlot(i + 1, T)
         push!(m.decls, slot)
         name = snames[i]
         tmp = :($name::$T)
@@ -171,20 +183,20 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
 
     # Vertex in block
     println(io, "// vertex input:")
+    vertex_slot = Sugar.newslot!(m, vertex_type, vertex_name)
     Transpiler.show_vertex_input(io, vertex_type, vertex_name)
-    vertex_args = map(Transpiler.typed_type_fields(vertex_type)) do arg
+    vertex_args = map(Transpiler.typed_type_fields(io, vertex_type)) do arg
         fname, T = arg.args
         Symbol(string(vertex_name, '_', fname))
     end
     vertex_expr = Expr(:call, vertex_type, vertex_args...)
     vertex_expr.typ = vertex_type
-    unshift!(ast.args, :($vertex_name = $vertex_expr))
-    unshift!(ast.args, :($vertex_name::$vertex_type))
+    unshift!(ast.args, :($vertex_slot = $vertex_expr))
 
 
     # uniform block
     show_uniforms(io, arg_names, arg_types)
-
+    glposition_slot = Sugar.newslot!(m, Vec4f0, :gl_Position)
     # output
     usage = """
     You need to return a tuple from vertex shader of the form:
@@ -199,24 +211,26 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
         length(out_tuple) != 2 && error(usage)
         glposition, vertexout = out_tuple
         # write to gl_Position
-        push!(ast.args, :(gl_Position = $(glposition)))
+        push!(ast.args, :($glposition_slot = $(glposition)))
         ret_types[2], vertexout
     else
         RT, ret_expr.args[1]
     end
-
     vertexsym = :vertex_out
+    vertex_slot = Sugar.newslot!(m, Sugar.expr_type(m, vertex_out_expr), vertexsym)
+
     # println(io, Sugar.getsource!(GLMethod(vertex_out_T)))
-    show_varying(io, vertex_out_T, vertexsym, qualifier = :out)
+    show_varying(io, vertex_out_T, :vertex_out, qualifier = :out)
     # write to out
-    push!(ast.args, :($vertexsym = $vertex_out_expr))
+    push!(ast.args, :($vertex_slot = $vertex_out_expr))
 
     println(io)
     println(io, "// vertex main function:")
     println(io, "void main()")
     # we already declared these, so hint to transpiler not to declare them again
-    push!(m.decls, vertexsym, :gl_Position, vertex_name)
+    push!(m.decls, vertex_slot, glposition_slot, vertex_slot)
     src_ast = Sugar.rewrite_ast(m, ast)
+    println(src_ast)
     Base.show_unquoted(io, src_ast, 0, 0)
     take!(io.io), vertex_out_T
 end
