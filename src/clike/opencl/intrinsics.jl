@@ -138,6 +138,7 @@ function Base.setindex!{T <: Vecs}(a::CLArray{T}, value::T, i::Integer)
     vstore(value, a, i)
 end
 
+
 function supports_indexing(m::CLMethod, ::Type{T}) where T
     T <: CLDeviceArray && return true
     false

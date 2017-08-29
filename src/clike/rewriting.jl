@@ -56,32 +56,27 @@ function index_expression(m, expr, args, types)
     end
     if supported_indices(mparent, T, index_types)
         indices = rewrite_indices(mparent, T, indices)
-        ret = if supports_indexing(mparent, T)
+        if supports_indexing(mparent, T)
             indexing = typed_expr(expr.typ, :ref, args[1], indices...)
             if is_setindex
                 indexing = :($indexing = $val)
             end
-            indexing
+            return indexing
         else
             if (T <: Tuple || is_fixedsize_array(T)) # Julia inbuilds allowing getindex, but need to use getfield in C
-                emit_call(mparent, getfield, expr.typ, args[1], indices...)
-            else
-                expr.args[1] = m # leave getindex
-                expr
+                return emit_call(mparent, getfield, expr.typ, args[1], indices...)
             end
         end
-        return ret
-    else
-        expr.args[1] = m # leave getindex
-        return expr
     end
+    expr.args[1] = m # leave getindex
+    return expr
 end
 
-function emit_constructor(m::LazyMethod, realtype, args)
+function emit_constructor(m::CMethods, realtype, args)
     Sugar.typed_expr(realtype, :curly, m, args...)
 end
 
-function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}}, expr)
+function Sugar.rewrite_function(method::CMethods, expr)
     f, _types = method.signature
     types = Sugar.to_tuple(_types)
     li = method.parent
@@ -103,7 +98,6 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         expr.args = expr.args[1:3]
         types = types[1:2]
         rexpr = index_expression(method, expr, expr.args[2:end], types)
-        println(rexpr)
         return rexpr
     elseif f == convert && length(types) == 2
         # BIG TODO, this changes semantic!!!! DONT

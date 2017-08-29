@@ -80,50 +80,22 @@ of the triangle, so they actually do hold the neighboring values needed to calcu
 const gl_GlobalInvocationID = Vec3f0(0, 0, 0)
 const gl_FragCoord = Vec4f0(0, 0, 0, 0)
 
-function glintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
-    glintrinsic(f, Sugar.to_tuple(types))
-end
-function glintrinsic{F <: Function}(f::F, types::Tuple)
-    # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
-    if f == broadcast
-        BF = types[1]
-        if BF <: Functions && all(T-> T <: Types || is_fixedsize_array(T), types[2:end])
-            return true
-        end
-    end
-    if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
-        return true
-    end
-    # matmul
-
-    m = methods(f)
-    isempty(m) && return false
-    sym = first(m).name
-    (F <: Functions && all(T-> T <: Types || is_fixedsize_array(T), types)) || (
-        # if any intrinsic funtion stub matches
-        isdefined(GLIntrinsics, sym) &&
-        Base.binding_module(GLIntrinsics, sym) == GLIntrinsics &&
-        length(methods(f, types)) == 1
-    )
-end
-
 end # end GLIntrinsics
 
 using .GLIntrinsics
 using GeometryTypes
 const gli = GLIntrinsics
-import .gli: glintrinsic, GLArray, GLDeviceArray, GLTexture
+import .gli: GLArray, GLDeviceArray, GLTexture
 
 import Sugar: isintrinsic, typename, vecname
 
 
-function is_native_type(m::GLMethod, T)
+function is_native_type(m::GLMethods, T)
     T <: cli.Types || is_fixedsize_array(m, T) ||
     T <: Tuple{T} where T <: cli.Numbers ||
     (T <: SMatrix && all(x-> x <= 4, size(T)))
 end
-
-function isintrinsic(m::GLMethod, func::ANY, sig_tuple::ANY)
+function isintrinsic(m::GLMethods, func::ANY, sig_tuple::ANY)
     # constructors are intrinsic. TODO more thorow lookup to match actual inbuild constructor
     types = Sugar.to_tuple(sig_tuple)
     isa(func, DataType) && return true
@@ -143,7 +115,7 @@ function isintrinsic(m::GLMethod, func::ANY, sig_tuple::ANY)
     sig_tuple <: sig
 end
 
-function isintrinsic(x::GLMethod)
+function isintrinsic(x::GLMethods)
     if isfunction(x)
         isintrinsic(x, x.signature...)
     else
@@ -254,8 +226,15 @@ end
 
 function typename{T <: SMatrix}(io::AbstractGLIO, ::Type{T})
     M, N = size(T)
-    string(prescripts[eltype(T)], "mat", M == N ? M : string(M, "x", N))
+    Symbol(string(prescripts[eltype(T)], "mat", M == N ? M : string(M, "x", N)))
 end
+
+function typename(io::AbstractGLIO, SV::Type{NTuple{N, T}}) where {N, T}
+    is_short_array(SV) || return _typename(io, SV)
+    eltype_name = typename(io, T)
+    Symbol(string(eltype_name, "[$N]"))
+end
+
 
 function vecname{T}(io::AbstractGLIO, t::Type{T})
     N = fixed_array_length(T)
@@ -263,17 +242,36 @@ function vecname{T}(io::AbstractGLIO, t::Type{T})
     return string(prescripts[ET], "vec", N)
 end
 
-fixed_size_array_fieldname(::GLMethod, T, i::Integer) = (:x, :y, :z, :w)[i]
-function fixed_size_array_fieldname(::GLMethod, T, i::Vec{N, IDXT}) where {N, IDXT <: Integer}
-    join(fixed_size_array_fieldname.(i), "")
+supports_indexing(m::GLMethods, T) = is_short_array(T)
+
+fixed_size_array_fieldname(::GLMethods, T, i::Integer) = (:x, :y, :z, :w)[i]
+function fixed_size_array_fieldname(m::GLMethods, T, i::Vec{N, IDXT}) where {N, IDXT <: Integer}
+    Symbol(join(fixed_size_array_fieldname.(m, T, i), ""))
+end
+function fixed_size_array_fieldname(m::GLMethods, T, i::Expr)
+    expr_t = expr_type(m, i)
+    @assert expr_t <: Vec{N, I} where {N, I <: Integer}
+    idx_val = eval(i)
+    fixed_size_array_fieldname(m, T, idx_val)
 end
 
-function supported_indices(m::GLMethod, ::Type{<: Tuple}, index_types)
+function is_short_array(T)
+    isa(T, DataType) && T <: Tuple && !is_fixedsize_array(T) &&
+    nfields(T) > 0 && all(isleaftype, T.parameters)
+end
+
+function supported_indices(m::GLMethods, ::Type{<: Tuple}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supported_indices(m::GLMethod, ::Type{T}, index_types) where T
+function supported_indices(m::GLMethods, ::Type{T}, index_types) where T
     if is_fixedsize_array(T)
         return length(index_types) == 1 && (index_types[1] <: Integer || is_fixedsize_array(T))
     end
     false
+end
+
+function emit_constructor(m::GLM, realtype, args) where GLM <: GLMethods
+    parent = m.parent
+    mcall = LazyMethod(parent, m.signature, Tuple{Sugar.expr_type.(parent, args)...})
+    typed_expr(realtype, :call, mcall, args...)
 end

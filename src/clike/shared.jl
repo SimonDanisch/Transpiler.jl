@@ -17,6 +17,13 @@ import Base: show_call, show_unquoted, show
 import Sugar: ASTIO, LazyMethod, typename, functionname, _typename, show_name
 import Sugar: supports_overloading, show_type, show_function
 
+const CLMethod = LazyMethod{:CL}
+
+const GLMethod = LazyMethod{:GL}
+const GEOMMethod = LazyMethod{:GEOM}
+const GLMethods = Union{GLMethod, GEOMMethod}
+const CMethods = Union{CLMethod, GLMethods}
+
 @compat abstract type CIO <: ASTIO end
 immutable EmptyCIO <: CIO
 end
@@ -27,6 +34,7 @@ immutable EmptyStruct
     x::Int32
     EmptyStruct() = new()
 end
+
 
 # helper function to fake a return type to type inference for intrinsic function stabs
 @noinline function ret{T}(::Type{T})::T
@@ -242,7 +250,7 @@ function _typename(io::IO, x)
             str
         end
     else
-        error("Not transpilable: $x")
+        error("Not transpilable: $x with type $(typeof(x))")
     end
     return str
 end
@@ -281,12 +289,16 @@ let hash_dict = Dict{Any, Int}(), counter = 0
     end
 end
 
-function functionname(io::CIO, method::LazyMethod)
+function Sugar.functionname(io::CIO, method::LazyMethod)
     if istype(method)
         # This should only happen, if the function is actually a type constructor
         return string('(', _typename(io, method.signature), ')')
     end
-    f_sym = Symbol(typeof(Sugar.getfunction(method)).name.mt.name)
+    f_sym = if isa(first(method.signature), Type)
+        Symbol(_typename(io, method.signature[1]))
+    else
+        Symbol(typeof(Sugar.getfunction(method)).name.mt.name)
+    end
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
     end
@@ -318,7 +330,7 @@ function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)
     show_name(io, slot)
 end
 
-function c_fieldname(m::LazyMethod, T, i::Integer)
+function c_fieldname(m::LazyMethod, T, i)
     str = if isleaftype(T)
         name = if is_fixedsize_array(m, T)
             fixed_size_array_fieldname(m, T, i)
@@ -383,18 +395,18 @@ function show_call(io::CIO, head, func, func_args, indent)
         return
     end
     op, cl = expr_calls[head]
-    print(io, '(')
+    # print(io, '(')
     if head == :ref
         show_unquoted(io, func, indent)
         if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
             # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
-            print(io, ')')
+            # print(io, ')')
             return
         end
     else
         show_unquoted(io, func, indent, -1)
     end
-    print(io, ')')
+    # print(io, ')')
     if head == :(.)
         print(io, '.')
     end
@@ -652,7 +664,7 @@ function show_returntype(io, method)
     end
     return
 end
-function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, GLMethods})
     if !isdefined(x, :funcheader)
         x.funcheader = if Sugar.isfunction(x)
             sprint() do io
@@ -680,7 +692,7 @@ function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
     x.funcheader
 end
 
-function Sugar.getfuncsource(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+function Sugar.getfuncsource(x::Union{CLMethod, GLMethods})
     # TODO make this lazy as well?
     sprint() do io
         show_unquoted(CIO(io, x), Sugar.getast!(x), 0, 0)

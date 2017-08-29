@@ -3,7 +3,6 @@ import Base: show
 using Sugar: LazyMethod, typename, functionname, print_dependencies, getsource!
 import Sugar: supports_overloading
 
-const CLMethod = LazyMethod{:CL}
 
 @compat abstract type AbstractCLIO <: CIO end
 

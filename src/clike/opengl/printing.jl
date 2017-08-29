@@ -14,33 +14,31 @@ function Sugar.gettypesource(x::GLMethods)
     tname = typename(glio, T)
     uninstanciable = T <: Tuple && any(x-> !isa(x, DataType), T.parameters) # can't be instantiated
     sprint() do io
-        if !uninstanciable
-            println(io, "// Julia name: $T")
-            print(io, "struct $tname{\n")
-            nf = nfields(T)
-            fields = []
-            if nf == 0 # structs can't be empty
-                # we use bool as a short placeholder type.
-                # TODO, are there cases where bool is no good?
-                println(io, "    float empty; // structs can't be empty")
-            else
-                for i in 1:nf
-                    FT = fieldtype(T, i)
-                    print(io, "    ", typename(glio, FT))
-                    print(io, ' ')
-                    print(io, c_fieldname(x, T, i))
-                    println(io, ';')
-                end
+        println(io, "// Julia name: $T")
+        print(io, "struct $tname{\n")
+        nf = nfields(T)
+        fields = []
+        if nf == 0 || uninstanciable # structs can't be empty
+            # we use bool as a short placeholder type.
+            # TODO, are there cases where bool is no good?
+            println(io, "    float empty; // structs can't be empty")
+        else
+            for i in 1:nf
+                FT = fieldtype(T, i)
+                print(io, "    ", typename(glio, FT))
+                print(io, ' ')
+                print(io, c_fieldname(x, T, i))
+                println(io, ';')
             end
-            println(io, "};")
         end
-        if (!isleaftype(T) || T <: Type || uninstanciable) # emit type instances as singletons
-            println(io, "const $tname TYP_INST_$tname;")
+        println(io, "};")
+        if (!isleaftype(T) || T <: Type || uninstanciable)
+            println(io, "const $tname TYP_INST_$tname = $tname(0.0);")
         end
     end
 end
 
-fixed_size_array_fieldname(::GLMethod, T, i) = (:x, :y, :z, :w)[i]
+fixed_size_array_fieldname(::GLMethods, T, i) = (:x, :y, :z, :w)[i]
 
 function glsl_gensym(name)
     # TODO track all symbols and actually emit a unique symbol
@@ -149,16 +147,7 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     # get body ast
     Sugar.getcodeinfo!(m) # make sure codeinfo is present
     ast = Sugar.sugared(m.signature..., code_typed)
-    # for (i, (T, name)) in enumerate(st)
-    #     slot = TypedSlot(i + 1, T)
-    #     push!(x.decls, slot)
-    #     push!(x, T)
-    #     if i + 1 > nargs # if not defined in arguments, define in body
-    #         tmp = :($name::$T)
-    #         tmp.typ = T
-    #         unshift!(expr.args, tmp)
-    #     end
-    # end
+
     for i in nargs:length(stypes)
         T = stypes[i]
         slot = TypedSlot(i + 1, T)
@@ -192,6 +181,7 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     vertex_expr = Expr(:call, vertex_type, vertex_args...)
     vertex_expr.typ = vertex_type
     unshift!(ast.args, :($vertex_slot = $vertex_expr))
+    unshift!(ast.args, :($vertex_slot::$vertex_type))
 
 
     # uniform block
@@ -230,7 +220,6 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     # we already declared these, so hint to transpiler not to declare them again
     push!(m.decls, vertex_slot, glposition_slot, vertex_slot)
     src_ast = Sugar.rewrite_ast(m, ast)
-    println(src_ast)
     Base.show_unquoted(io, src_ast, 0, 0)
     take!(io.io), vertex_out_T
 end
@@ -246,16 +235,16 @@ function emit_fragment_shader(shader, arguments)
     RT = Sugar.returntype(m)
 
     fragmentinT = first(arguments)
-    fragment_name = snames[2] # 1 is self
+    fragment_name = snames[1] # 1 is self
 
     arg_types = arguments[2:end]
-    arg_names = snames[3:nargs]
+    arg_names = snames[2:nargs]
     # get body ast
     Sugar.getcodeinfo!(m) # make sure codeinfo is present
     ast = Sugar.sugared(m.signature..., code_typed)
-    for i in (nargs + 1):length(stypes)
+    for i in nargs:length(stypes)
         T = stypes[i]
-        slot = SlotNumber(i)
+        slot = TypedSlot(i + 1, T)
         push!(m.decls, slot)
         name = snames[i]
         tmp = :($name::$T)
@@ -290,16 +279,18 @@ function emit_fragment_shader(shader, arguments)
         Sugar.to_tuple(RT)
     end
     # wrong return types
-    !all(x-> x <: StaticVector || x <: gli.Numbers, ret_types) && error(usage)
+    !all(x-> is_fixedsize_array(x) || x <: gli.Numbers, ret_types) && error(usage)
     out_tuple = ret_expr.args[1].args[2:end]
     for (i, elem) in enumerate(out_tuple)
+        FT = Sugar.expr_type(m, elem)
         framebuffname = glsl_gensym("color$(i - 1)")
+        framebuffer_slot = Sugar.newslot!(m, FT, framebuffname)
         print(io, "layout (location = $(i - 1)) out ")
-        show_type(io, Sugar.expr_type(m, elem))
+        show_type(io, FT)
         print(io, ' ')
         show_name(io, framebuffname)
         println(io, ';')
-        push!(ast.args, :($framebuffname = $elem))
+        push!(ast.args, :($framebuffer_slot = $elem))
         push!(m.decls, framebuffname)
     end
     println(io)
@@ -313,17 +304,18 @@ end
 
 function Sugar.getast!(m::GEOMMethod)
     if !isdefined(m, :ast)
+        isintrinsic(m, m.signature...) && return Expr(:block)
         emitfunc = m.cache[:emitfunc]; emit_func_args = m.cache[:emit_func_args]
         outname = m.cache[:outname]
         Sugar.getcodeinfo!(m) # make sure codeinfo is present
         nargs = Sugar.method_nargs(m)
         expr = Sugar.sugared(m.signature..., code_typed)
-        st = Sugar.slottypes(m)
-        for (i, T) in enumerate(st)
-            slot = SlotNumber(i)
+        st = Sugar.getslots!(m)
+        for (i, (T, name)) in enumerate(st)
+            slot = TypedSlot(i + 1, T)
             push!(m.decls, slot)
-            if i > nargs # if not defined in arguments, define in body
-                name = Sugar.slotname(m, slot)
+            push!(m, T)
+            if i + 1 > nargs # if not defined in arguments, define in body
                 tmp = :($name::$T)
                 tmp.typ = T
                 unshift!(expr.args, tmp)
@@ -331,17 +323,18 @@ function Sugar.getast!(m::GEOMMethod)
         end
         expr.typ = Sugar.returntype(m)
         expr = Sugar.rewrite_ast(m, expr)
-        emit_call = Expr(:call, gli.EmitVertex)
+        emit_call = Expr(:call, LazyMethod(m, gli.EmitVertex, Tuple{}))
         emit_call.typ = Void
+        glposition_slot = Sugar.newslot!(m, Vec4f0, :gl_Position)
         expr = first(Sugar.replace_expr(expr) do expr
             if isa(expr, Expr) && expr.head == :call
                 func = expr.args[1]
-                if func == emitfunc
-                    args = (map(x-> Sugar.expr_type(m, x), expr.args[2:end])...)
+                if isfunction(func) && Sugar.getfunction(func) == emitfunc
+                    args = (Sugar.expr_type.(m, expr.args[2:end])...,)
                     push!(emit_func_args, args)
-                    push!(m.decls, :gl_Position)
+                    push!(m.decls, glposition_slot)
                     push!(m.decls, outname)
-                    pos_expr = :(gl_Position = $(expr.args[2]))
+                    pos_expr = :($glposition_slot = $(expr.args[2]))
                     fragout_expr = :($outname = $(expr.args[3]))
                     return true, (pos_expr, fragout_expr, emit_call)
                 end
@@ -355,12 +348,11 @@ end
 
 function Sugar.isintrinsic(x::GEOMMethod)
     if Sugar.isfunction(x)
+        isintrinsic(x, x.signature...) && return true
         f = Sugar.getfunction(x)
-        Sugar.isintrinsic(f) ||
-            gli.glintrinsic(x.signature...) ||
-            f == x.cache[:emitfunc]
+        return f == x.cache[:emitfunc]
     else
-        gli.glintrinsic(x.signature)
+        is_native_type(x, x.signature)
     end
 end
 
@@ -392,10 +384,9 @@ function emit_geometry_shader(
     snames = Sugar.slotnames(m)
     stypes = Sugar.slottypes(m)
 
-    geom_in_name = snames[3]
-
+    geom_in_name = snames[2]
     arg_types = arguments[3:end]
-    arg_names = snames[4:nargs]
+    arg_names = snames[3:nargs-1]
 
     # get body ast
     ast = Sugar.getast!(m)
@@ -417,7 +408,8 @@ function emit_geometry_shader(
     # defer printing for the function and types
     io2 = GLIO(IOBuffer(), m)
     for func in funcs
-        if !Sugar.isintrinsic(func) && !(Sugar.getfunction(func) == emitfunc)
+        if !Sugar.isintrinsic(func)
+            println(io2, "//", func)
             println(io2, Sugar.getsource!(func))
         end
     end
@@ -451,8 +443,9 @@ function emit_geometry_shader(
         # to have a line number or nothing in the end... Not sure!
         error("internal error: Expr should have contained return. Found: $x")
     end
-    push!(src_ast.args, Expr(:call, gli.EndPrimitive))
-    emitname = snames[2]
+
+    push!(src_ast.args, emit_call(m, gli.EndPrimitive, Void))
+    emitname = snames[1]
     unshift!(src_ast.args, :($emitname::$emitfunctype))
     Base.show_unquoted(io, src_ast, 0, 0)
     src = take!(io.io)
