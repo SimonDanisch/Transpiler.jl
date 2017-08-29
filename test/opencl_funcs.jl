@@ -28,8 +28,8 @@ mapsource = """void mapkernel_1(Base123 f, __global float * restrict  a, __globa
 @testset "map kernel" begin
     @test source == mapsource
     deps = dependencies!(cl_mapkernel, true)
-    @test length(deps) == 8
     deps_test = [
+        Int64,
         UInt32,
         (+, Tuple{UInt32, UInt32}),
         (cli.get_global_id, Tuple{Int64}),
@@ -39,6 +39,7 @@ mapsource = """void mapkernel_1(Base123 f, __global float * restrict  a, __globa
         typeof(+),
         cli.CLArray{Float32,1}
     ]
+    @test length(deps) == length(deps_test)
     for elem in deps
         @test elem.signature in deps_test
     end
@@ -87,9 +88,9 @@ broadcastsource = """void broadcast_kernel_5(__global float * restrict  A, Base1
 @testset "broadcast kernel" begin
     @test source == broadcastsource
     deps = dependencies!(cl_mapkernel, true)
-    @test length(deps) == 13
     deps_test = [
         UInt32,
+        Int,
         (+,Tuple{UInt32,UInt32}),
         (cli.get_global_id, Tuple{Int64}),
         (<=,Tuple{UInt32,UInt32}),
@@ -103,6 +104,7 @@ broadcastsource = """void broadcast_kernel_5(__global float * restrict  A, Base1
         Tuple{UInt32},
         Float32
     ]
+    @test length(deps) == length(deps_test)
     for elem in deps
         @test elem.signature in deps_test
     end
@@ -138,7 +140,6 @@ function custom_index_test(x)
 end
 
 source, method, name = Transpiler.kernel_source(custom_index_test, (typeof(1f0*I),))
-
 source_compare = """// dependencies
 // UniformScaling{Float32}
 struct  __attribute__ ((packed)) TYPUniformScaling_float{
@@ -146,10 +147,12 @@ struct  __attribute__ ((packed)) TYPUniformScaling_float{
 };
 typedef struct TYPUniformScaling_float UniformScaling_float;
 
+// Symbol
+
 // (oftype, Tuple{Float32,Int64})
 float oftype_9(float x, int c)
 {
-    return (float)(c);
+    return (float){c};
 }
 // (zero, Tuple{Float32})
 float zero_6(float x)
@@ -177,12 +180,16 @@ function ntuple_test(::Val{N}) where N
 end
 
 source, method, name = Transpiler.kernel_source(ntuple_test, (Val{4},))
-
 compare_source = """// dependencies
 // Val{4}
 typedef int Val_4; // empty type emitted as an int
 // #inner
+__constant int FUNC_INST_x2inner = 0;
 typedef int x2inner; // empty type emitted as an int
+// Type{Val{4}}
+typedef int Type5Val5466; // placeholder type instance
+__constant Type5Val5466 TYP_INST_Type5Val5466 = 0;
+
 // Any
 typedef int Any; // placeholder type instance
 __constant Any TYP_INST_Any = 0;
@@ -193,14 +200,10 @@ float inner_12(int i)
     return (float){i} * 77.0f;
 }
 // (ntuple, Tuple{#inner,Type{Val{4}}})
-float4 ntuple_10(x2inner f, Type5Val5466 x2unused2)
+float4 ntuple_10(x2inner f, Type5Val5466 xunused_3)
 {
     return (float4){(inner_12)(1), (inner_12)(2), (inner_12)(3), (inner_12)(4)};
 }
-// Type{Val{4}}
-typedef int Type5Val5466; // placeholder type instance
-__constant Type5Val5466 TYP_INST_Type5Val5466 = 0;
-
 // Type{Val}
 typedef int Type5Val6; // placeholder type instance
 __constant Type5Val6 TYP_INST_Type5Val6 = 0;
@@ -208,9 +211,9 @@ __constant Type5Val6 TYP_INST_Type5Val6 = 0;
 // ########################
 // Main inner function
 // (ntuple_test, (Val{4},))
-__kernel float4 ntuple_test_11(Val_4 x2unused2)
+__kernel float4 ntuple_test_11(Val_4 xunused_2)
 {
-    return (ntuple_10)(inner, TYP_INST_Type5Val5466);
+    return (ntuple_10)(FUNC_INST_x2inner, TYP_INST_Type5Val5466);
 }
 """
 @test compare_source == source
