@@ -274,12 +274,20 @@ let hash_dict = Dict{Any, Int}(), counter = 0
     end
 end
 
-function functionname(io::CIO, method::LazyMethod)
+function Sugar.functionname(io::CIO, method::Type{T}) where T
+    string('(', _typename(io, T), ')')
+end
+function Sugar.functionname(io::CIO, method::LazyMethod)
     if istype(method)
         # This should only happen, if the function is actually a type constructor
         return string('(', _typename(io, method.signature), ')')
     end
-    f_sym = Symbol(typeof(Sugar.getfunction(method)).name.mt.name)
+    func = Sugar.getfunction(method)
+    f_sym = if isa(func, DataType)
+        functionname(io, func)
+    else
+        Symbol(typeof(func).name.mt.name)
+    end
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
     end
@@ -352,11 +360,8 @@ show_linenumber(io::CIO, line) = show_comment(io, " line $line:")
 show_linenumber(io::CIO, line, file) = show_comment(io, "$file $line $line")
 
 
-function show(io::CIO, x::Type)
-    print(io, string("TYP_INST_", typename(io, Type{x})))
-end
 function show_unquoted(io::CIO, x::Type, ::Int, ::Int)
-    print(io, string("TYP_INST_", typename(io, Type{x})))
+    print(io, typename(io, x))
 end
 function show_unquoted(io::CIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
@@ -368,6 +373,7 @@ function show_unquoted(io::CIO, f::F, ::Int, ::Int) where F <: Sugar.AllFuncs
     print(io, "FUNC_INST_", typename(io, F))
 end
 
+const expr_calls_extended = merge(expr_calls, Dict(:constructor => ('{', '}')))
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
 function show_call(io::CIO, head, func, func_args, indent)
     if head == :curly && Sugar.expr_type(func) <: Type# typeconstructors
@@ -375,19 +381,19 @@ function show_call(io::CIO, head, func, func_args, indent)
         show_unquoted(io, func, indent)
         return
     end
-    op, cl = expr_calls[head]
-    print(io, '(')
+    op, cl = expr_calls_extended[head]
+    # print(io, '(')
     if head == :ref
         show_unquoted(io, func, indent)
         if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
             # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
-            print(io, ')')
+            # print(io, ')')
             return
         end
     else
-        show_unquoted(io, func, indent, -1)
+        print(io, functionname(io, func))
     end
-    print(io, ')')
+    # print(io, ')')
     if head == :(.)
         print(io, '.')
     end
@@ -602,6 +608,9 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
 
     elseif (head === :block) || (head === :body)
         show_block(io, "", ex, indent); print(io, "}")
+
+    elseif (head === :new)
+        show_call(io, :constructor, args[1], args[2:end], indent)
 
     elseif head === :return
         if length(args) == 1

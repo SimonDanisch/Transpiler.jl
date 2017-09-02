@@ -90,7 +90,7 @@ end
 
 function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     # constructors are intrinsic. TODO more thorow lookup to match actual inbuild constructor
-    isa(func, DataType) && return true
+    isa(func, DataType) && is_native_type(m, func) && return true
     func == tuple && return true # TODO match against all Base intrinsics?
     func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
     func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
@@ -164,5 +164,7 @@ end
 
 function Sugar.vecname(io::AbstractCLIO, t::Type{T}) where T
     N = fixed_array_length(T)
-    return string(typename(io, eltype(T)), N)
+    ET = eltype(T)
+    etname = typename(io, ET)
+    return string(etname, N)
 end

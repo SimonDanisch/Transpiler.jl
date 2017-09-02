@@ -109,7 +109,6 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         replaceit, replacement = getindex_replace(li, expr, types)
         replaceit && return replacement
     elseif f == convert && length(types) == 2
-        # BIG TODO, this changes semantic!!!! DONT
         if types[1] == Type{types[2]}
             return Sugar.rewrite_ast(li, expr.args[3]) # no convert needed
         else # But for now we just change a convert into a constructor call
@@ -123,13 +122,12 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
             end
         end
     # Constructors
-    elseif F <: Type || f == tuple
+    elseif f == tuple
         realtype = Sugar.expr_type(li, expr)
         args = expr.args[2:end]
         if isempty(args) && sizeof(realtype) == 0
             push!(args, 0f0) # there are no empty types, so if empty, insert default
         end
-        # C/Opencl uses curly braces for constructors
         constr_m = LazyMethod(li, realtype)
         return emit_constructor(constr_m, realtype, args)
     elseif f == broadcast
@@ -151,9 +149,7 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, pow, types)
         return expr
-    elseif F <: Function
-        expr.args[1] = method
-        return expr
     end
+    expr.args[1] = method
     return expr
 end
