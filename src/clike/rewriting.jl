@@ -98,16 +98,16 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         return index_expression(method, expr, expr.args[2:end], types)
     elseif f == getfield && length(types) == 2 && types[2] <: Integer
         return emit_call(
-            method, getfield,
+            li, getfield,
             Sugar.expr_type(method, expr),
-            expr.args[1], c_fieldname(method, types[1], expr.args[3])
+            expr.args[2], c_fieldname(method, types[1], expr.args[3])
         )
     elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
         # if we have a static indexed next, we unfold it into a a getindex directly
         expr.args = expr.args[1:3]
         types = types[1:2]
-        replaceit, replacement = getindex_replace(li, expr, types)
-        replaceit && return replacement
+        rexpr = index_expression(method, expr, expr.args[2:end], types)
+        return rexpr
     elseif f == convert && length(types) == 2
         if types[1] == Type{types[2]}
             return Sugar.rewrite_ast(li, expr.args[3]) # no convert needed
@@ -143,6 +143,9 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         return expr
     # div is / in c like languages
     elseif f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
+        expr.args[1] = LazyMethod(li, (/), types)
+        return expr
+    elseif f == Base.cttz_int && length(types) == 1 && types[1] <: cli.Ints
         expr.args[1] = LazyMethod(li, (/), types)
         return expr
     # Base.^ is pow in C

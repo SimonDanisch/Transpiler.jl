@@ -137,7 +137,8 @@ is_fixedsize_array{T}(::Type{T}) = is_fixedsize_array(nothing, T)
 function is_fixedsize_array{T}(m, ::Type{T})
     (T <: StaticVector || is_ntuple(T)) &&
     fixed_array_length(T) in vector_lengths &&
-    eltype(T) <: Numbers
+    eltype(T) <: Numbers &&
+    eltype(T) != Bool
 end
 
 # Functionality to remove unsupported characters from the source
@@ -361,7 +362,7 @@ show_linenumber(io::CIO, line, file) = show_comment(io, "$file $line $line")
 
 
 function show_unquoted(io::CIO, x::Type, ::Int, ::Int)
-    print(io, typename(io, x))
+    print(io, "TYP_INST_", typename(io, Type{x}))
 end
 function show_unquoted(io::CIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
