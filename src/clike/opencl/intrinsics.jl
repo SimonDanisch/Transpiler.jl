@@ -57,7 +57,7 @@ end
 @cl_intrinsic get_global_size(::Integer) = ret(Cuint)
 @cl_intrinsic select(::T, ::T, ::Bool) where {T} = ret(T)
 
-@cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)
+# @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)
 
 @cl_intrinsic barrier(::Cuint) = nothing
 @cl_intrinsic mem_fence(::Cuint) = nothing

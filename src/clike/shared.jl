@@ -54,6 +54,7 @@ const vector_lengths = (2, 3, 4, 8, 16)
 # Maybe we should remove this and leave it to `is_fixedsize_array`, which is extensible
 _vecs = []
 for i in vector_lengths, T in numbers
+    T == Bool && continue
     push!(_vecs, NTuple{i, T})
     push!(_vecs, SVector{i, T})
 end
@@ -167,7 +168,7 @@ function is_supported_char(io::CIO, char)
     # in a name
     isascii(char) &&
     !Base.isoperator(Symbol(char)) &&
-    !(char in ('.', '#', '(', ')', ',', '{', '}'))  # some ascii codes are not allowed
+    !(char in ('.', '#', '(', ')', ',', '{', '}', ' '))  # some ascii codes are not allowed
 end
 
 """
@@ -199,6 +200,8 @@ function _typename(io::IO, x)
     str = if isa(x, Expr) && x.head == :curly
         string(x, "_", join(x.args, "_"))
     elseif isa(x, Symbol)
+        string(x)
+    elseif isa(x, UnionAll)
         string(x)
     elseif isa(x, DataType)
         T = x
@@ -276,26 +279,27 @@ let hash_dict = Dict{Any, Int}(), counter = 0
 end
 
 function Sugar.functionname(io::CIO, method::Type{T}) where T
-    string('(', _typename(io, T), ')')
+    string('(', typename(io, T), ')')
 end
 function Sugar.functionname(io::CIO, method::LazyMethod)
-    if istype(method)
+    func = if istype(method)
         # This should only happen, if the function is actually a type constructor
-        return string('(', _typename(io, method.signature), ')')
+        method.signature
+    else
+        Sugar.getfunction(method)
     end
-    func = Sugar.getfunction(method)
-    f_sym = if isa(func, DataType)
+    f_sym = if isa(func, Type)
         functionname(io, func)
     else
-        Symbol(typeof(func).name.mt.name)
+        Base.function_name(func)
     end
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
     end
-    str = if isa(io, Sugar.ASTIO) && supports_overloading(io)
-        string(f_sym)
-    else
+    str = if isfunction(method) && !supports_overloading(io)
         string(f_sym, '_', signature_hash(method.signature[2]))
+    elseif istype(method)
+        return string(f_sym)
     end
     if isa(io, Sugar.ASTIO)
         symbol_hygiene(io, str)
@@ -385,7 +389,9 @@ function show_call(io::CIO, head, func, func_args, indent)
     op, cl = expr_calls_extended[head]
     # print(io, '(')
     if head == :ref
+        print(io, '(')
         show_unquoted(io, func, indent)
+        print(io, ')')
         if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
             # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
             # print(io, ')')
@@ -611,15 +617,20 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         show_block(io, "", ex, indent); print(io, "}")
 
     elseif (head === :new)
-        show_call(io, :constructor, args[1], args[2:end], indent)
-
+        constr_args = args[2:end]
+        if isempty(constr_args)
+            push!(constr_args, 0f0)
+        end
+        show_call(io, :constructor, args[1], constr_args, indent)
     elseif head === :return
         if length(args) == 1
-            if !(isa(args[1], Expr) && (args[1].typ == Void || args[1] === nothing))
-                # if returns void, we need to omit the return statement
-                print(io, "return ")
+            if args[1] != nothing
+                if !(isa(args[1], Expr) && (args[1].typ == Void))
+                    # if returns void, we need to omit the return statement
+                    print(io, "return ")
+                end
+                show_unquoted(io, args[1])
             end
-            show_unquoted(io, args[1])
         else
             # ignore if empty, otherwise, LOL? What's a return with multiple args?
             isempty(args) || error("Unknown return Expr: $ex")

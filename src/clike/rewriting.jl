@@ -39,7 +39,19 @@ function rewrite_indices(m::LazyMethod, T, indices)
         end
     end
 end
-
+@generated function cl_getindex(x::T, idx::Integer) where T
+    expr = Expr(:block)
+    N = nfields(T)
+    for i = 1:N
+        name = fieldname(T, i)
+        if i == N
+            push!(expr.args, :(return getfield(x, $(QuoteNode(name)))))
+        else
+            push!(expr.args, :($i == idx && return getfield(x, $(QuoteNode(name)))))
+        end
+    end
+    expr
+end
 function index_expression(m, expr, args, types)
     mparent = m.parent
     is_setindex = getfunction(m) == setindex!
@@ -59,8 +71,8 @@ function index_expression(m, expr, args, types)
         return Sugar.rewrite_ast(mparent, expr.args[2])
     end
     if supports_indices(mparent, T, index_types)
-        indices = rewrite_indices(mparent, T, indices)
         ret = if supports_indexing(mparent, T)
+            indices = rewrite_indices(mparent, T, indices)
             indexing = typed_expr(expr.typ, :ref, args[1], indices...)
             if is_setindex
                 indexing = :($indexing = $val)
@@ -68,7 +80,12 @@ function index_expression(m, expr, args, types)
             indexing
         else
             if (T <: Tuple || is_fixedsize_array(T)) # Julia inbuilds allowing getindex, but need to use getfield in C
-                emit_call(mparent, getfield, expr.typ, args[1], indices...)
+                if all(x-> isa(x, Integer), indices)
+                    indices = rewrite_indices(mparent, T, indices)
+                    emit_call(mparent, getfield, expr.typ, args[1], indices...)
+                else
+                    emit_call(mparent, cl_getindex, expr.typ, args[1], indices...)
+                end
             else
                 expr.args[1] = m # leave getindex
                 expr
@@ -145,9 +162,12 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     elseif f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
         expr.args[1] = LazyMethod(li, (/), types)
         return expr
-    elseif f == Base.cttz_int && length(types) == 1 && types[1] <: cli.Ints
-        expr.args[1] = LazyMethod(li, (/), types)
-        return expr
+    # elseif f == Base.cttz_int && length(types) == 1 && types[1] <: cli.Ints
+    #     expr.args[1] = LazyMethod(li, (/), types)
+    #     return expr
+    elseif f == length && length(types) == 1 && is_fixedsize_array(types[1])
+        return fixed_array_length(types[1])
+    return expr
     # Base.^ is pow in C
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, pow, types)
