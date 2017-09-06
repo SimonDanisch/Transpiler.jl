@@ -113,7 +113,7 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     # if nothing got rewritten, do the backend independant rewrites:
     if f in (getindex, setindex!)
         return index_expression(method, expr, expr.args[2:end], types)
-    elseif f == getfield && length(types) == 2 && types[2] <: Integer
+    elseif f == getfield && length(types) == 2 && isa(expr.args[3], Integer)
         return emit_call(
             li, getfield,
             Sugar.expr_type(method, expr),
@@ -156,7 +156,7 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
             return expr
         end
         expr.args[1] = method
-        expr.args[2] = LazyMethod(li, fb, types[2:end])
+        # expr.args[2] = LazyMethod(li, fb, types[2:end])
         return expr
     # div is / in c like languages
     elseif f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)

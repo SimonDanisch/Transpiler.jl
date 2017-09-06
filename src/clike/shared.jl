@@ -389,18 +389,30 @@ function show_call(io::CIO, head, func, func_args, indent)
     op, cl = expr_calls_extended[head]
     # print(io, '(')
     if head == :ref
+        FT = Sugar.expr_type(func)
+        if is_fixedsize_array(FT) && length(func_args) == 1
+            # Special case for small vectors an an integer variable as index
+            IDXT = Sugar.expr_type(func_args[1])
+            if IDXT <: Integer && !isa(func_args[1], Integer)
+                ET = eltype(FT)
+                print(io, "(($(typename(io, ET))*)&") # convert to pointer
+                show_unquoted(io, func, indent)
+                print(io, ")[")
+                show_unquoted(io, func_args[1])
+                print(io, "]")
+                return
+            end
+        end
         print(io, '(')
         show_unquoted(io, func, indent)
         print(io, ')')
-        if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
+        if FT <: Tuple{T} where T <: cli.Numbers
             # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
-            # print(io, ')')
             return
         end
     else
         print(io, functionname(io, func))
     end
-    # print(io, ')')
     if head == :(.)
         print(io, '.')
     end
@@ -428,7 +440,6 @@ function show_block(io::CIO, head, args::Vector, body, indent::Int)
         show_list(io, args, ", ", indent)
         print(io, "){")
     end
-
     ind = head === :module || head === :baremodule ? indent : indent + indent_width
     exs = (is_expr(body, :block) || is_expr(body, :body)) ? body.args : Any[body]
     for (i, ex) in enumerate(exs)
@@ -477,9 +488,10 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         func_args = args[2:end]
         fname = Symbol(functionname(io, f))
         if fname == :getfield && nargs == 3
-            show_unquoted(io, args[2], indent) # type to be accessed
+            accessed, fieldname = args[2], args[3]
+            show_unquoted(io, accessed, indent) # type to be accessed
             print(io, '.')
-            show_unquoted(io, args[3], indent)
+            show_unquoted(io, fieldname, indent)
         else
             # TODO handle getfield
             func_prec = operator_precedence(fname)
