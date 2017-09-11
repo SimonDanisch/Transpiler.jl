@@ -110,6 +110,21 @@ function _ind2sub{T}(inds, ind::T)
     (ind-l*indnext+f, _ind2sub(Base.tail(inds), indnext)...)
 end
 
+Base.@pure function gpu_sub2ind{N, T}(dims::NTuple{N}, I::NTuple{N, T})
+    Base.@_inline_meta
+    _sub2ind(NTuple{N, T}(dims), T(1), T(1), I...)
+end
+_sub2ind(x, L, ind) = ind
+function _sub2ind{T}(::Tuple{}, L, ind, i::T, I::T...)
+    Base.@_inline_meta
+    ind + (i - T(1)) * L
+end
+function _sub2ind(inds, L, ind, i::IT, I::IT...) where IT
+    Base.@_inline_meta
+    r1 = inds[1]
+    _sub2ind(Base.tail(inds), L * r1, ind + (i - IT(1)) * L, I...)
+end
+
 #######################################
 # shared common intrinsic functions
 const functions = (
@@ -416,15 +431,19 @@ function show_call(io::CIO, head, func, func_args, indent)
     if head == :(.)
         print(io, '.')
     end
-    if !isempty(func_args) && isa(func_args[1], Expr) && func_args[1].head == :parameters
-        print(io, op)
-        show_list(io, func_args[2:end], ", ", indent)
-        print(io, "; ")
-        show_list(io, func_args[1].args, ", ", indent)
-        print(io, cl)
-    else
-        show_enclosed_list(io, op, func_args, ", ", cl, indent)
+    addition_tracked_object = []
+    m = io.method
+    for elem in func_args
+        T = Sugar.expr_type(m, elem)
+        contains, fields = Sugar.contains_tracked_type(m, T)
+        if contains && haskey(m.cache, :tracked_types)
+            fields = m.cache[:tracked_types][elem]
+            for field in fields
+                push!(addition_tracked_object, last(field))
+            end
+        end
     end
+    show_enclosed_list(io, op, vcat(func_args, addition_tracked_object), ", ", cl, indent)
     return
 end
 
@@ -489,11 +508,21 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         fname = Symbol(functionname(io, f))
         if fname == :getfield && nargs == 3
             accessed, fieldname = args[2], args[3]
-            show_unquoted(io, accessed, indent) # type to be accessed
-            print(io, '.')
-            show_unquoted(io, fieldname, indent)
+            m = io.method
+            ttypes = get(m.cache, :tracked_types, Dict())
+            tt = Sugar.expr_type(ex)
+            if Sugar.is_tracked_type(m, tt) &&
+                    haskey(ttypes, accessed)
+                field_ptrs = ttypes[accessed]
+                ptr_idx = findfirst(x-> first(x) == fieldname, field_ptrs)
+                ptr = field_ptrs[ptr_idx]
+                show_name(io, ptr[end])
+            else
+                show_unquoted(io, accessed, indent) # type to be accessed
+                print(io, '.')
+                show_unquoted(io, fieldname, indent)
+            end
         else
-            # TODO handle getfield
             func_prec = operator_precedence(fname)
             # scalar multiplication (i.e. "100x")
             if (
@@ -712,5 +741,34 @@ function Sugar.getfuncsource(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
         show_unquoted(CIO(io, x), Sugar.getast!(x), 0, 0)
     end
 end
+
+
+function Sugar.getfuncargs(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+    functype = x.signature[1]
+    calltypes, slots = Sugar.to_tuple(x.signature[2]), Sugar.getslots!(x)
+    n = Sugar.method_nargs(x)
+    start = ifelse(Sugar.isclosure(functype), 1, 2)
+    unpacked_pointers = []
+    args = map(start:n) do i
+        argtype, name = slots[i]
+        # Slot types might be less specific, e.g. when the variable is unused it might end up as Any.
+        # but generally the slot type is the correct one, especially in the context of varargs.
+        if !isleaftype(argtype) && length(calltypes) <= i
+            argtype = calltypes[i - 1]
+        end
+        if Sugar.contains_tracked_type(x, argtype)[1] && haskey(x.cache, :tracked_types)
+            pointers = map(x.cache[:tracked_types][TypedSlot(i, argtype)]) do field
+                ptr_typ = Sugar.get_fields_type(argtype, field[1:end-1])
+                :($(last(field))::$ptr_typ)
+            end
+            append!(unpacked_pointers, pointers)
+        end
+        expr = :($(name)::$(argtype))
+        expr.typ = argtype
+        expr
+    end
+    vcat(args, unpacked_pointers)
+end
+
 
 include("rewriting.jl")

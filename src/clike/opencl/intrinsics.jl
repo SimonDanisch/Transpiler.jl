@@ -15,6 +15,11 @@ using SpecialFunctions: erf, erfc
 immutable CLArray{T, N} <: AbstractArray{T, N} end
 immutable LocalMemory{T} <: AbstractArray{T, 1} end
 
+immutable DeviceArray{T, N} <: AbstractArray{T, 1}
+    ptr::CLArray{T, N}
+    size::NTuple{N, Cuint}
+end
+
 const CLDeviceArray = Union{CLArray, LocalMemory}
 const Types = Union{vecs..., numbers..., CLArray, LocalMemory}
 
