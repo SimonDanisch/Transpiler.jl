@@ -32,7 +32,7 @@ end
 
 function rewrite_indices(m::LazyMethod, T, indices)
     map(indices) do idx
-        if supports_indexing(m, T)
+        if supports_indexing(m, T) && !(is_fixedsize_array(T) && isa(idx, Integer))
             return to_index(m, T, idx)
         else
             return c_fieldname(m, T, idx) # indexing not supported, use getfield
@@ -71,11 +71,17 @@ function index_expression(m, expr, args, types)
         return Sugar.rewrite_ast(mparent, expr.args[2])
     end
     if supports_indices(mparent, T, index_types)
-        ret = if supports_indexing(mparent, T)
+        fixed_size_static_idx = is_fixedsize_array(T) && length(indices) == 1 && isa(first(indices), Integer)
+        ret = if supports_indexing(mparent, T) && !fixed_size_static_idx
             indices = rewrite_indices(mparent, T, indices)
             indexing = typed_expr(expr.typ, :ref, args[1], indices...)
             if is_setindex
-                indexing = :($indexing = $val)
+                if Sugar.expr_type(mparent, val) == eltype(T)
+                    indexing = :($indexing = $val)
+                else
+                    expr.args[1] = m # leave getindex
+                    return expr
+                end
             end
             indexing
         else

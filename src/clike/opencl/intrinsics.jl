@@ -118,10 +118,14 @@ function isintrinsic(x::CLMethod)
 end
 
 Base.getindex{T}(a::cli.LocalMemory{T}, i::Integer) = cli.ret(T)
-Base.getindex{T, N}(a::CLArray{T, N}, i::Integer) = cli.ret(T)
+Base.getindex{T}(a::CLArray{T}, i::Integer) = cli.ret(T)
 
 Base.setindex!{T}(::cli.LocalMemory{T}, ::T, ::Integer) = nothing
-Base.setindex!{T, N}(a::CLArray{T, N}, value::T, i::Integer) = nothing
+Base.setindex!{T}(a::CLArray{T}, value::T, i::Integer) = nothing
+function Base.setindex!(a::CLArray{T}, value::T2, i::Integer) where {T, T2}
+    setindex!(a, T(value), i)
+    nothing
+end
 
 # TODO overload SIMD.vload, so that code can run seamlessly on the CPU as well.
 for VecType in (NTuple, SVector)
@@ -144,6 +148,7 @@ Base.getindex{T <: Vecs, N}(a::CLArray{T, N}, i::Integer) = vload(T, a, i)
 function Base.setindex!{T <: Vecs}(a::CLArray{T}, value::T, i::Integer)
     vstore(value, a, i)
 end
+
 
 function supports_indexing(m::LazyMethod, ::Type{T}) where T
     is_fixedsize_array(T) || T <: CLDeviceArray
