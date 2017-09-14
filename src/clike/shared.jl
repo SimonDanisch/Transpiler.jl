@@ -228,13 +228,13 @@ end
 
 _typename(io::CIO, x::Union{AbstractString, Symbol}) = x
 
-_typename{T <: Number}(io::IO, x::Type{Tuple{T}}) = _typename(io, T)
-_typename(io::IO, x::Type{Float64}) = "float"
+_typename{T <: Numbers}(io::IO, x::Type{Tuple{T}}) = _typename(io, T)
+_typename(io::IO, x::Type{Float64}) = "double"
 _typename(io::IO, x::Type{Float32}) = "float"
-_typename(io::IO, x::Type{Int}) = "int"
+_typename(io::IO, x::Type{Int64}) = "long"
 _typename(io::IO, x::Type{Int32}) = "int"
 _typename(io::IO, x::Type{UInt32}) = "uint"
-_typename(io::IO, x::Type{UInt64}) = "uint"
+_typename(io::IO, x::Type{UInt64}) = "ulong"
 _typename(io::IO, x::Type{UInt8}) = "uchar"
 _typename(io::IO, x::Type{Bool}) = "bool"
 _typename{T}(io::IO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
@@ -378,7 +378,7 @@ function show_call(io::CIO, head, func, func_args, indent)
             if IDXT <: Integer && !isa(func_args[1], Integer)
                 ET = eltype(FT)
                 print(io, "(($(typename(io, ET))*)&") # convert to pointer
-                show_unquoted(io, func, indent)identity_3
+                show_unquoted(io, func, indent)
                 print(io, ")[")
                 show_unquoted(io, func_args[1])
                 print(io, "]")
