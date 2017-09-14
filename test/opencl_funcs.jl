@@ -12,7 +12,7 @@ end
 # empty caches
 Transpiler.empty_caches!()
 
-args = (typeof(+), cli.CLArray{Float32, 1}, cli.CLArray{Float32, 1}, cli.CLArray{Float32, 1})
+args = (typeof(+), cli.GlobalPointer{Float32, 1}, cli.GlobalPointer{Float32, 1}, cli.GlobalPointer{Float32, 1})
 cl_mapkernel = CLMethod((mapkernel, args))
 source = Sugar.getsource!(cl_mapkernel)
 mapsource = """void mapkernel_1(Base123 f, __global float * restrict  a, __global float * restrict  b, __global float * restrict  c)
@@ -37,7 +37,7 @@ mapsource = """void mapkernel_1(Base123 f, __global float * restrict  a, __globa
         Float32,
         (-, Tuple{UInt32, UInt32}),
         typeof(+),
-        cli.CLArray{Float32,1}
+        cli.GlobalPointer{Float32,1}
     ]
     @test length(deps) == length(deps_test)
     for elem in deps
@@ -69,7 +69,7 @@ function broadcast_kernel(A, f, sz, arg1, arg2)
     return
 end
 
-args = (cli.CLArray{Float32, 1}, typeof(+), Tuple{UInt32}, cli.CLArray{Float32, 1}, Float32)
+args = (cli.GlobalPointer{Float32, 1}, typeof(+), Tuple{UInt32}, cli.GlobalPointer{Float32, 1}, Float32)
 cl_mapkernel = CLMethod((broadcast_kernel, args))
 source = getsource!(cl_mapkernel)
 broadcastsource = """void broadcast_kernel_5(__global float * restrict  A, Base123 f, uint sz, __global float * restrict  arg1, float arg2)
@@ -96,10 +96,10 @@ broadcastsource = """void broadcast_kernel_5(__global float * restrict  A, Base1
         (<=,Tuple{UInt32,UInt32}),
         (_prod,Tuple{Tuple{UInt32}}),
         (+,Tuple{Float32,Float32}),
-        (broadcast_index,Tuple{cli.CLArray{Float32,1},Tuple{UInt32},UInt32}),
+        (broadcast_index,Tuple{cli.GlobalPointer{Float32,1},Tuple{UInt32},UInt32}),
         (broadcast_index,Tuple{Float32,Tuple{UInt32},UInt32}),
         (-,Tuple{UInt32,UInt32}),
-        cli.CLArray{Float32,1},
+        cli.GlobalPointer{Float32,1},
         typeof(+),
         Tuple{UInt32},
         Float32

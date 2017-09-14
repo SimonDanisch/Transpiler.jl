@@ -89,46 +89,11 @@ mix{T}(x, y, a::T) = x .* (T(1) .- a) .+ y .* a
 fract(x) = x - floor(x)
 fabs(x::AbstractFloat) = abs(x)
 
-#########################
-# Important functions that we need on the GPU:
-#
-function gpu_ind2sub{T}(dims, ind::T)
-    Base.@_inline_meta
-    _ind2sub(dims, ind - T(1))
-end
-
-_ind2sub{T}(::Tuple{}, ind::T) = (ind + T(1),)
-function _ind2sub{T}(indslast::NTuple{1}, ind::T)
-    Base.@_inline_meta
-    ((ind + T(1)),)
-end
-function _ind2sub{T}(inds, ind::T)
-    Base.@_inline_meta
-    r1 = inds[1]
-    indnext = div(ind, r1)
-    f = T(1); l = r1
-    (ind-l*indnext+f, _ind2sub(Base.tail(inds), indnext)...)
-end
-
-Base.@pure function gpu_sub2ind{N, T}(dims::NTuple{N}, I::NTuple{N, T})
-    Base.@_inline_meta
-    _sub2ind(NTuple{N, T}(dims), T(1), T(1), I...)
-end
-_sub2ind(x, L, ind) = ind
-function _sub2ind{T}(::Tuple{}, L, ind, i::T, I::T...)
-    Base.@_inline_meta
-    ind + (i - T(1)) * L
-end
-function _sub2ind(inds, L, ind, i::IT, I::IT...) where IT
-    Base.@_inline_meta
-    r1 = inds[1]
-    _sub2ind(Base.tail(inds), L * r1, ind + (i - IT(1)) * L, I...)
-end
 
 #######################################
 # shared common intrinsic functions
 const functions = (
-    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
+    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &, %,
     sin, tan, sqrt, cos, mod, round, floor, fract, log, atan2, atan, max, min,
     abs, pow, log10, exp, normalize, cross, dot, smoothstep, mix, norm,
     length, clamp, cospi, sinpi, asin, fma, fabs, sizeof, isinf, isnan
@@ -231,7 +196,9 @@ function _typename(io::IO, x)
             Sugar.vecname(io, T)
         elseif T <: Tuple
 
-            str = if (isempty(T.parameters) || T == Tuple)
+            str = if isempty(T.parameters)
+                "EmptyTuple_"
+            elseif T == Tuple
                 "EmptyTuple"
             else
                 str = "Tuple_"
@@ -411,7 +378,7 @@ function show_call(io::CIO, head, func, func_args, indent)
             if IDXT <: Integer && !isa(func_args[1], Integer)
                 ET = eltype(FT)
                 print(io, "(($(typename(io, ET))*)&") # convert to pointer
-                show_unquoted(io, func, indent)
+                show_unquoted(io, func, indent)identity_3
                 print(io, ")[")
                 show_unquoted(io, func_args[1])
                 print(io, "]")
@@ -509,19 +476,11 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         if fname == :getfield && nargs == 3
             accessed, fieldname = args[2], args[3]
             m = io.method
-            ttypes = get(m.cache, :tracked_types, Dict())
             tt = Sugar.expr_type(ex)
-            if Sugar.is_tracked_type(m, tt) &&
-                    haskey(ttypes, accessed)
-                field_ptrs = ttypes[accessed]
-                ptr_idx = findfirst(x-> first(x) == fieldname, field_ptrs)
-                ptr = field_ptrs[ptr_idx]
-                show_name(io, ptr[end])
-            else
-                show_unquoted(io, accessed, indent) # type to be accessed
-                print(io, '.')
-                show_unquoted(io, fieldname, indent)
-            end
+            show_unquoted(io, accessed, indent) # type to be accessed
+            print(io, '.')
+            fieldname = isa(fieldname, QuoteNode) ? fieldname.value : fieldname
+            print(io, fieldname)
         else
             func_prec = operator_precedence(fname)
             # scalar multiplication (i.e. "100x")

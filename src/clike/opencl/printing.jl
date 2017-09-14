@@ -21,14 +21,14 @@ supports_overloading(io::CLIO) = false
 include("intrinsics.jl")
 include("rewriting.jl")
 
-Sugar.is_tracked_type(m, ::Type{<: cli.CLArray}) = true
+Sugar.is_tracked_type(m, ::Type{<: cli.GlobalPointer}) = true
 
 """
 Transpiles the source of a given function `f` for it's argument types `args` (Tuple{<})
 """
 function kernel_source(f::Function, args::NTuple{N, <: DataType}) where N
     method = CLMethod((f, args))
-    Sugar.track_types!(method)
+    # Sugar.track_types!(method)
     funcsource = getsource!(method)
     # add compute program dependant infos
     io = CLIO(IOBuffer(), method)

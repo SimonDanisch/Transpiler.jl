@@ -12,16 +12,11 @@ import Sugar: typename, vecname
 using SpecialFunctions: erf, erfc
 
 # TODO, these are rather global pointers and this should be represented in the type
-immutable CLArray{T, N} <: AbstractArray{T, N} end
-immutable LocalMemory{T} <: AbstractArray{T, 1} end
-
-immutable DeviceArray{T, N} <: AbstractArray{T, 1}
-    ptr::CLArray{T, N}
-    size::NTuple{N, Cuint}
-end
-
-const CLDeviceArray = Union{CLArray, LocalMemory}
-const Types = Union{vecs..., numbers..., CLArray, LocalMemory}
+immutable GlobalPointer{T} end
+immutable LocalPointer{T} end
+Base.eltype(::Type{GlobalPointer{T}}) where T = T
+const DevicePointer = Union{GlobalPointer, LocalPointer}
+const Types = Union{vecs..., numbers..., GlobalPointer, LocalPointer}
 
 #########
 # GLOBALS
@@ -75,8 +70,8 @@ for N in vector_lengths
     fload = Symbol(string("vload", N))
     fstore = Symbol(string("vstore", N))
     @eval begin
-        @cl_intrinsic $(fload)(i::Integer, a::CLArray{T, N}) where {T <: Numbers, N} = ret(NTuple{$N, T})
-        @cl_intrinsic $(fstore)(x::NTuple{$N, T}, i::Integer, a::CLArray{T, N}) where {T <: Numbers, N} = nothing
+        @cl_intrinsic $(fload)(i::Integer, a::GlobalPointer{T}) where {T <: Numbers} = ret(NTuple{$N, T})
+        @cl_intrinsic $(fstore)(x::NTuple{$N, T}, i::Integer, a::GlobalPointer{T}) where {T <: Numbers} = nothing
     end
 end
 
@@ -87,7 +82,8 @@ end # end CLIntrinsics
 using .CLIntrinsics
 
 const cli = CLIntrinsics
-import .cli: CLArray, CLDeviceArray
+
+import .cli: GlobalPointer, DevicePointer
 
 import Sugar: typename, isintrinsic
 
@@ -117,12 +113,12 @@ function isintrinsic(x::CLMethod)
     end
 end
 
-Base.getindex{T}(a::cli.LocalMemory{T}, i::Integer) = cli.ret(T)
-Base.getindex{T}(a::CLArray{T}, i::Integer) = cli.ret(T)
+Base.getindex{T}(a::cli.LocalPointer{T}, i::Integer) = cli.ret(T)
+Base.getindex{T}(a::GlobalPointer{T}, i::Integer) = cli.ret(T)
 
-Base.setindex!{T}(::cli.LocalMemory{T}, ::T, ::Integer) = nothing
-Base.setindex!{T}(a::CLArray{T}, value::T, i::Integer) = nothing
-function Base.setindex!(a::CLArray{T}, value::T2, i::Integer) where {T, T2}
+Base.setindex!{T}(::cli.LocalPointer{T}, ::T, ::Integer) = nothing
+Base.setindex!{T}(a::GlobalPointer{T}, value::T, i::Integer) = nothing
+function Base.setindex!(a::GlobalPointer{T}, value::T2, i::Integer) where {T, T2}
     setindex!(a, T(value), i)
     nothing
 end
@@ -134,31 +130,31 @@ for VecType in (NTuple, SVector)
         fstore = Symbol(string("vstore", N))
         VType = :($VecType{$N, T})
         @eval begin
-            function vload{T <: cli.Numbers, N, IT <: Integer}(::Type{$VType}, a::CLArray{$VType, N}, i::IT)
-                $VType(cli.$(fload)(i - IT(1), CLArray{T, N}(a)))
+            function vload{T <: cli.Numbers, IT <: Integer}(::Type{$VType}, a::GlobalPointer{$VType}, i::IT)
+                $VType(cli.$(fload)(i - IT(1), GlobalPointer{T}(a)))
             end
-            function vstore{T <: cli.Numbers, N, IT <: Integer}(x::$VType, a::CLArray{$VType, N}, i::IT)
-                cli.$(fstore)(Tuple(x), i - IT(1), CLArray{T, N}(a))
+            function vstore{T <: cli.Numbers, IT <: Integer}(x::$VType, a::GlobalPointer{$VType}, i::IT)
+                cli.$(fstore)(Tuple(x), i - IT(1), GlobalPointer{T}(a))
             end
         end
     end
 end
 
-Base.getindex{T <: Vecs, N}(a::CLArray{T, N}, i::Integer) = vload(T, a, i)
-function Base.setindex!{T <: Vecs}(a::CLArray{T}, value::T, i::Integer)
+Base.getindex{T <: Vecs}(a::GlobalPointer{T}, i::Integer) = vload(T, a, i)
+function Base.setindex!{T <: Vecs}(a::GlobalPointer{T}, value::T, i::Integer)
     vstore(value, a, i)
 end
 
 
 function supports_indexing(m::LazyMethod, ::Type{T}) where T
-    is_fixedsize_array(T) || T <: CLDeviceArray
+    is_fixedsize_array(T) || T <: DevicePointer
 end
 
-function supports_indices(m::LazyMethod, ::Type{ <: CLArray{T, N}}, index_types) where {T, N}
+function supports_indices(m::LazyMethod, ::Type{<: GlobalPointer{T}}, index_types) where T
     is_fixedsize_array(m, T) && return false # fixed size arrays are implemented via vstore/load
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supports_indices(m::LazyMethod, ::Type{ <: CLDeviceArray}, index_types)
+function supports_indices(m::LazyMethod, ::Type{<: DevicePointer}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
 function supports_indices(m::LazyMethod, ::Type{<: Tuple}, index_types)
@@ -166,12 +162,12 @@ function supports_indices(m::LazyMethod, ::Type{<: Tuple}, index_types)
 end
 
 
-function typename{T, N}(io::AbstractCLIO, x::Type{CLArray{T, N}})
+function typename(io::AbstractCLIO, x::Type{GlobalPointer{T}}) where T
     tname = typename(io, T)
     # restrict should be fine for now, since we haven't implemented views yet!
-    "__global $tname * restrict "
+    "__global $tname * "
 end
-function typename{T}(io::AbstractCLIO, x::Type{cli.LocalMemory{T}})
+function typename(io::AbstractCLIO, x::Type{cli.LocalPointer{T}}) where T
     tname = typename(io, T)
     "__local $tname * "
 end

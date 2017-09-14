@@ -178,6 +178,14 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, pow, types)
         return expr
+    elseif f == rem && length(types) == 2 && all(t-> t <: cli.Numbers, types)
+        expr.args[1] = LazyMethod(li, %, types)
+        return expr
+    elseif f == (*) && length(types) == 1 && all(t-> t <: cli.Numbers, types)
+        m = LazyMethod(li, identity, types)
+        push!(li, m)
+        expr.args[1] = m # drop *(x)
+        return expr
     end
     expr.args[1] = method
     return expr
