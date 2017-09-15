@@ -92,11 +92,21 @@ fabs(x::AbstractFloat) = abs(x)
 
 #######################################
 # shared common intrinsic functions
+
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &, %,
-    sin, tan, sqrt, cos, mod, round, floor, fract, log, atan2, atan, max, min,
-    abs, pow, log10, exp, normalize, cross, dot, smoothstep, mix, norm,
-    length, clamp, cospi, sinpi, asin, fma, fabs, sizeof, isinf, isnan
+    <<, >>,
+    sqrt, mod, fract, log,
+    round, floor, ceil, trunc,
+    sin, sinpi, sinh, asin, asinh,
+    cos, cospi, cosh, acos, acosh,
+    tan, tanh, atan, atanh,# atanpi, atan2pi, <- julia doesnt have those?!
+    max, min,
+    abs, pow, normalize, cross, dot, smoothstep, mix, norm,
+    exp, exp2, exp10, expm1,
+    log, log2, log10, log1p,
+    length, clamp, fma, fabs, sizeof, isinf, isnan, sign,
+    cbrt
 )
 
 function fixed_array_length(T)
