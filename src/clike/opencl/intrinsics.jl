@@ -36,7 +36,7 @@ macro cl_intrinsic(expr)
 
     # it's possible to define methods in base as intrinsic.
     # if they're not in base, we need to define a function stub
-    if !isdefined(Base, func) || func != :select
+    if !isdefined(Base, func)
         push!(ret_expr.args, esc(expr))
     end
     types = map(args) do arg
