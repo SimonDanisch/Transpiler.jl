@@ -66,6 +66,8 @@ const Vecs = Union{vecs...}
 # Intrinsics that don't have a julia counterpart:
 
 pow{T <: Numbers}(a::T, b::T) = a ^ b
+cl_pow{T1, T2}(a::T1, b::T2) = pow(promote(a, b)...)
+cl_pow{T <: Numbers}(a::T, b::T) = pow(a, b)
 
 """
 smoothstep performs smooth Hermite interpolation between 0 and 1 when edge0 < x < edge1. This is useful in cases where a threshold function with a smooth transition is desired. smoothstep is equivalent to:

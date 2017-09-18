@@ -15,6 +15,7 @@ using SpecialFunctions: erf, erfc
 immutable GlobalPointer{T} end
 immutable LocalPointer{T} end
 Base.eltype(::Type{GlobalPointer{T}}) where T = T
+Base.eltype(::Type{LocalPointer{T}}) where T = T
 const DevicePointer = Union{GlobalPointer, LocalPointer}
 const Types = Union{vecs..., numbers..., GlobalPointer, LocalPointer}
 
@@ -35,7 +36,7 @@ macro cl_intrinsic(expr)
 
     # it's possible to define methods in base as intrinsic.
     # if they're not in base, we need to define a function stub
-    if !isdefined(Base, func)
+    if !isdefined(Base, func) || func != :select
         push!(ret_expr.args, esc(expr))
     end
     types = map(args) do arg
@@ -50,12 +51,25 @@ macro cl_intrinsic(expr)
     ret_expr
 end
 
+@cl_intrinsic get_num_groups(dim::Integer) = ret(Cuint)
 @cl_intrinsic get_global_id(dim::Integer) = ret(Cuint)
 @cl_intrinsic get_local_id(::Integer) = ret(Cuint)
 @cl_intrinsic get_group_id(::Integer) = ret(Cuint)
 @cl_intrinsic get_local_size(::Integer) = ret(Cuint)
 @cl_intrinsic get_global_size(::Integer) = ret(Cuint)
-@cl_intrinsic select(::T, ::T, ::Bool) where {T} = ret(T)
+@cl_intrinsic get_work_dim() = ret(Cuint)
+
+
+for (a, b) in (
+        Float32 => UInt32,
+        Float64 => UInt64,
+        Int32 => UInt32,
+        Int64 => UInt64,
+    )
+    @eval Base.select(a::$a, b::$a, c::$b) = Bool(c) ? a : b
+    @eval @cl_intrinsic select(a::$a, b::$a, c::$b) = ret($a)
+    @eval cl_select(a::$a, b::$a, c::Bool) = CLIntrinsics.select(a, b, $b(c))
+end
 
 # @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)
 

@@ -176,7 +176,7 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     return expr
     # Base.^ is pow in C
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
-        expr.args[1] = LazyMethod(li, pow, types)
+        expr.args[1] = LazyMethod(li, cl_pow, types)
         return expr
     elseif f == rem && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, %, types)
