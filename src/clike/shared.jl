@@ -649,6 +649,22 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         end
     elseif (head in (:meta, :inbounds))
         # TODO, just ignore this? Log this? We definitely don't need it in GLSL
+    elseif head == :local_memory_init
+        # e.g. __local float test[100]
+        T, N, name = args
+        print(io, "__local ")
+        show_type(io, T)
+        print(io, ' ')
+        show_name(io, name)
+        print(io, "[$N]")
+    elseif head == :local_memory
+        # take the above initialized name and returns a pointer (local_memory_init & local_memory
+        # are guaranteed to be emitted together)
+        # and now just return &test;
+        name = args[1]
+        print(io, "(&")
+        show_name(io, name)
+        print(io, ')')
     else
         println(ex)
         unsupported_expr(string(ex), line_number)

@@ -15,6 +15,19 @@ function rewrite_backend_specific{F}(m::CLMethod, f::F, types, expr)
         expr.args[1] = LazyMethod(li, cli.barrier, (Cuint,))
         expr.args[2] = :CLK_LOCAL_MEM_FENCE
         return true, expr
+    elseif Symbol(f) == Symbol("GPUArrays.LocalMemory")
+        if length(expr.args) != 4
+            error("LocalMemory needs to be used as: LocalMemory(state, T, N), with T & N being constants / static function parameters")
+        end
+        T, N = Sugar.rewrite_ast.(m, expr.args[3:end])
+        if !(isa(T, Type) && isa(N, Integer))
+            error("LocalMemory needs to be used as: LocalMemory(T, N), with T being a type and N an integer")
+        end
+        name = gensym("localmem")
+        ret = Expr(:local_memory, name)
+        ret.typ = cli.LocalPointer{T}
+        inline = Sugar.InlineNode([Expr(:local_memory_init, T, N, name)], ret)
+        return true, inline
     else
         return false, expr
     end

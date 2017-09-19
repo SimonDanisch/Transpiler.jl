@@ -14,8 +14,11 @@ using SpecialFunctions: erf, erfc
 # TODO, these are rather global pointers and this should be represented in the type
 immutable GlobalPointer{T} end
 immutable LocalPointer{T} end
+immutable LocalArray{T} end
 Base.eltype(::Type{GlobalPointer{T}}) where T = T
 Base.eltype(::Type{LocalPointer{T}}) where T = T
+Base.eltype(::Type{LocalArray{T}}) where T = T
+
 const DevicePointer = Union{GlobalPointer, LocalPointer}
 const Types = Union{vecs..., numbers..., GlobalPointer, LocalPointer}
 
@@ -111,6 +114,7 @@ function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     func == tuple && return true # TODO match against all Base intrinsics?
     func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
     func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
+    # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true
     # shared intrinsic functions should all work on all native types.
     # TODO, find exceptions where this isn't true
     func in functions && all(x-> is_native_type(m, x), Sugar.to_tuple(sig_tuple)) && return true
