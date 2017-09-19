@@ -44,12 +44,15 @@ end
     N = nfields(T)
     for i = 1:N
         name = fieldname(T, i)
-        if i == N
-            push!(expr.args, :(return getfield(x, $(QuoteNode(name)))))
+        if i == 1
+            push!(expr.args, :(elem = $getfield(x, $(QuoteNode(name)))))
         else
-            push!(expr.args, :($i == idx && return getfield(x, $(QuoteNode(name)))))
+            push!(expr.args, :(if $i == idx
+                elem = $getfield(x, $(QuoteNode(name)))
+            end))
         end
     end
+    push!(expr.args, :(return elem))
     expr
 end
 function index_expression(m, expr, args, types)

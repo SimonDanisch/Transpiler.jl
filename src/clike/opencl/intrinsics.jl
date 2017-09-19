@@ -61,6 +61,7 @@ end
 @cl_intrinsic get_local_size(::Integer) = ret(Cuint)
 @cl_intrinsic get_global_size(::Integer) = ret(Cuint)
 @cl_intrinsic get_work_dim() = ret(Cuint)
+@cl_intrinsic sizeof(x::Any) = ret(Cuint)
 
 
 for (a, b) in (

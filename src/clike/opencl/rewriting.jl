@@ -24,7 +24,7 @@ function rewrite_backend_specific{F}(m::CLMethod, f::F, types, expr)
             error("LocalMemory needs to be used as: LocalMemory(T, N), with T being a type and N an integer")
         end
         name = gensym("localmem")
-        ret = Expr(:local_memory, name)
+        ret = Expr(:local_memory, T, name)
         ret.typ = cli.LocalPointer{T}
         inline = Sugar.InlineNode([Expr(:local_memory_init, T, N, name)], ret)
         return true, inline

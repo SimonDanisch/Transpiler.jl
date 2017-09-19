@@ -107,7 +107,7 @@ const functions = (
     abs, pow, normalize, cross, dot, smoothstep, mix, norm,
     exp, exp2, exp10, expm1,
     log, log2, log10, log1p,
-    length, clamp, fma, fabs, sizeof, isinf, isnan, sign,
+    length, clamp, fma, fabs, isinf, isnan, sign,
     cbrt
 )
 
@@ -661,8 +661,10 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         # take the above initialized name and returns a pointer (local_memory_init & local_memory
         # are guaranteed to be emitted together)
         # and now just return &test;
-        name = args[1]
-        print(io, "(&")
+        T, name = args
+        print(io, "( __local ")
+        show_type(io, T)
+        print(io, " *)(&")
         show_name(io, name)
         print(io, ')')
     else
