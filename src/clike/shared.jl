@@ -647,7 +647,7 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
             # ignore if empty, otherwise, LOL? What's a return with multiple args?
             isempty(args) || error("Unknown return Expr: $ex")
         end
-    elseif (head in (:meta, :inbounds))
+    elseif (head in (:meta, :inbounds, :boundscheck))
         # TODO, just ignore this? Log this? We definitely don't need it in GLSL
     elseif head == :local_memory_init
         # e.g. __local float test[100]

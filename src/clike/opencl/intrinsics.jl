@@ -69,6 +69,7 @@ for (a, b) in (
         Float64 => UInt64,
         Int32 => UInt32,
         Int64 => UInt64,
+        Bool => Bool,
     )
     @eval Base.select(a::$a, b::$a, c::$b) = Bool(c) ? a : b
     @eval @cl_intrinsic select(a::$a, b::$a, c::$b) = ret($a)
