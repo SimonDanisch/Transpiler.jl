@@ -108,7 +108,7 @@ const functions = (
     exp, exp2, exp10, expm1,
     log, log2, log10, log1p,
     length, clamp, fma, fabs, isinf, isnan, sign,
-    cbrt
+    cbrt, copysign
 )
 
 function fixed_array_length(T)
