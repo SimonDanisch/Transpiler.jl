@@ -102,7 +102,7 @@ const functions = (
     round, floor, ceil, trunc,
     sin, sinpi, sinh, asin, asinh,
     cos, cospi, cosh, acos, acosh,
-    tan, tanh, atan, atanh,# atanpi, atan2pi, <- julia doesnt have those?!
+    tan, tanh, atan, atanh, atan2,# atanpi, atan2pi, <- julia doesnt have those?!
     max, min,
     abs, pow, normalize, cross, dot, smoothstep, mix, norm,
     exp, exp2, exp10, expm1,
