@@ -32,14 +32,29 @@ end
 
 function rewrite_indices(m::LazyMethod, T, indices)
     map(indices) do idx
-        if supports_indexing(m, T)
+        if supports_indexing(m, T) && !(is_fixedsize_array(T) && isa(idx, Integer))
             return to_index(m, T, idx)
         else
             return c_fieldname(m, T, idx) # indexing not supported, use getfield
         end
     end
 end
-
+@generated function cl_getindex(x::T, idx::Integer) where T
+    expr = Expr(:block)
+    N = nfields(T)
+    for i = 1:N
+        name = fieldname(T, i)
+        if i == 1
+            push!(expr.args, :(elem = $getfield(x, $(QuoteNode(name)))))
+        else
+            push!(expr.args, :(if $i == idx
+                elem = $getfield(x, $(QuoteNode(name)))
+            end))
+        end
+    end
+    push!(expr.args, :(return elem))
+    expr
+end
 function index_expression(m, expr, args, types)
     mparent = m.parent
     is_setindex = getfunction(m) == setindex!
@@ -59,16 +74,27 @@ function index_expression(m, expr, args, types)
         return Sugar.rewrite_ast(mparent, expr.args[2])
     end
     if supports_indices(mparent, T, index_types)
-        indices = rewrite_indices(mparent, T, indices)
-        ret = if supports_indexing(mparent, T)
+        fixed_size_static_idx = is_fixedsize_array(T) && length(indices) == 1 && isa(first(indices), Integer)
+        ret = if supports_indexing(mparent, T) && !fixed_size_static_idx
+            indices = rewrite_indices(mparent, T, indices)
             indexing = typed_expr(expr.typ, :ref, args[1], indices...)
             if is_setindex
-                indexing = :($indexing = $val)
+                if Sugar.expr_type(mparent, val) == eltype(T)
+                    indexing = :($indexing = $val)
+                else
+                    expr.args[1] = m # leave getindex
+                    return expr
+                end
             end
             indexing
         else
             if (T <: Tuple || is_fixedsize_array(T)) # Julia inbuilds allowing getindex, but need to use getfield in C
-                emit_call(mparent, getfield, expr.typ, args[1], indices...)
+                if all(x-> isa(x, Integer), indices)
+                    indices = rewrite_indices(mparent, T, indices)
+                    emit_call(mparent, getfield, expr.typ, args[1], indices...)
+                else
+                    emit_call(mparent, cl_getindex, expr.typ, args[1], indices...)
+                end
             else
                 expr.args[1] = m # leave getindex
                 expr
@@ -96,20 +122,19 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     # if nothing got rewritten, do the backend independant rewrites:
     if f in (getindex, setindex!)
         return index_expression(method, expr, expr.args[2:end], types)
-    elseif f == getfield && length(types) == 2 && types[2] <: Integer
+    elseif f == getfield && length(types) == 2 && isa(expr.args[3], Integer)
         return emit_call(
-            method, getfield,
+            li, getfield,
             Sugar.expr_type(method, expr),
-            expr.args[1], c_fieldname(method, types[1], expr.args[3])
+            expr.args[2], c_fieldname(method, types[1], expr.args[3])
         )
     elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
         # if we have a static indexed next, we unfold it into a a getindex directly
         expr.args = expr.args[1:3]
         types = types[1:2]
-        replaceit, replacement = getindex_replace(li, expr, types)
-        replaceit && return replacement
+        rexpr = index_expression(method, expr, expr.args[2:end], types)
+        return rexpr
     elseif f == convert && length(types) == 2
-        # BIG TODO, this changes semantic!!!! DONT
         if types[1] == Type{types[2]}
             return Sugar.rewrite_ast(li, expr.args[3]) # no convert needed
         else # But for now we just change a convert into a constructor call
@@ -123,13 +148,12 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
             end
         end
     # Constructors
-    elseif F <: Type || f == tuple
+    elseif f == tuple
         realtype = Sugar.expr_type(li, expr)
         args = expr.args[2:end]
         if isempty(args) && sizeof(realtype) == 0
             push!(args, 0f0) # there are no empty types, so if empty, insert default
         end
-        # C/Opencl uses curly braces for constructors
         constr_m = LazyMethod(li, realtype)
         return emit_constructor(constr_m, realtype, args)
     elseif f == broadcast
@@ -141,19 +165,34 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
             return expr
         end
         expr.args[1] = method
-        expr.args[2] = LazyMethod(li, fb, types[2:end])
+        # expr.args[2] = LazyMethod(li, fb, types[2:end])
         return expr
     # div is / in c like languages
     elseif f == div && length(types) == 2 && all(x-> x <: cli.Ints, types)
         expr.args[1] = LazyMethod(li, (/), types)
         return expr
+    # elseif f == Base.cttz_int && length(types) == 1 && types[1] <: cli.Ints
+    #     expr.args[1] = LazyMethod(li, (/), types)
+    #     return expr
+    elseif f == length && length(types) == 1 && is_fixedsize_array(types[1])
+        return fixed_array_length(types[1])
+    return expr
     # Base.^ is pow in C
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
-        expr.args[1] = LazyMethod(li, pow, types)
+        expr.args[1] = LazyMethod(li, cl_pow, types)
         return expr
-    elseif F <: Function
-        expr.args[1] = method
+    elseif f == rem && length(types) == 2 && all(t-> t <: cli.Numbers, types)
+        expr.args[1] = LazyMethod(li, %, types)
+        return expr
+    elseif (f == (⊻)) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
+        expr.args[1] = LazyMethod(li, ^, types)
+        return expr
+    elseif f == (*) && length(types) == 1 && all(t-> t <: cli.Numbers, types)
+        m = LazyMethod(li, identity, types)
+        push!(li, m)
+        expr.args[1] = m # drop *(x)
         return expr
     end
+    expr.args[1] = method
     return expr
 end

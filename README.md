@@ -37,9 +37,9 @@ end
 a = rand(Float32, 50_000)
 b = rand(Float32, 50_000)
 device, ctx, queue = cl.create_compute_context()
-a_buff = cl.CLArray(queue, a)
-b_buff = cl.CLArray(queue, b)
-c_buff = cl.CLArray(queue, similar(a))
+a_buff = cl.GlobalPointer(queue, a)
+b_buff = cl.GlobalPointer(queue, b)
+c_buff = cl.GlobalPointer(queue, similar(a))
 args = (test, a_buff, b_buff, c_buff)
 
 cl_mapkernel = clt.CLFunction(mapkernel, args, queue)

@@ -54,6 +54,7 @@ const vector_lengths = (2, 3, 4, 8, 16)
 # Maybe we should remove this and leave it to `is_fixedsize_array`, which is extensible
 _vecs = []
 for i in vector_lengths, T in numbers
+    T == Bool && continue
     push!(_vecs, NTuple{i, T})
     push!(_vecs, SVector{i, T})
 end
@@ -65,6 +66,8 @@ const Vecs = Union{vecs...}
 # Intrinsics that don't have a julia counterpart:
 
 pow{T <: Numbers}(a::T, b::T) = a ^ b
+cl_pow{T1, T2}(a::T1, b::T2) = pow(promote(a, b)...)
+cl_pow{T <: Numbers}(a::T, b::T) = pow(a, b)
 
 """
 smoothstep performs smooth Hermite interpolation between 0 and 1 when edge0 < x < edge1. This is useful in cases where a threshold function with a smooth transition is desired. smoothstep is equivalent to:
@@ -88,34 +91,24 @@ mix{T}(x, y, a::T) = x .* (T(1) .- a) .+ y .* a
 fract(x) = x - floor(x)
 fabs(x::AbstractFloat) = abs(x)
 
-#########################
-# Important functions that we need on the GPU:
-#
-function gpu_ind2sub{T}(dims, ind::T)
-    Base.@_inline_meta
-    _ind2sub(dims, ind - T(1))
-end
-
-_ind2sub{T}(::Tuple{}, ind::T) = (ind + T(1),)
-function _ind2sub{T}(indslast::NTuple{1}, ind::T)
-    Base.@_inline_meta
-    ((ind + T(1)),)
-end
-function _ind2sub{T}(inds, ind::T)
-    Base.@_inline_meta
-    r1 = inds[1]
-    indnext = div(ind, r1)
-    f = T(1); l = r1
-    (ind-l*indnext+f, _ind2sub(Base.tail(inds), indnext)...)
-end
 
 #######################################
 # shared common intrinsic functions
+
 const functions = (
-    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &,
-    sin, tan, sqrt, cos, mod, round, floor, fract, log, atan2, atan, max, min,
-    abs, pow, log10, exp, normalize, cross, dot, smoothstep, mix, norm,
-    length, clamp, cospi, sinpi, asin, fma, fabs, sizeof, isinf, isnan
+    +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &, %,
+    <<, >>,
+    sqrt, mod, fract, log,
+    round, floor, ceil, trunc,
+    sin, sinpi, sinh, asin, asinh,
+    cos, cospi, cosh, acos, acosh,
+    tan, tanh, atan, atanh, atan2,# atanpi, atan2pi, <- julia doesnt have those?!
+    max, min,
+    abs, pow, normalize, cross, dot, smoothstep, mix, norm,
+    exp, exp2, exp10, expm1,
+    log, log2, log10, log1p,
+    length, clamp, fma, fabs, isinf, isnan, sign,
+    cbrt, copysign
 )
 
 function fixed_array_length(T)
@@ -137,7 +130,8 @@ is_fixedsize_array{T}(::Type{T}) = is_fixedsize_array(nothing, T)
 function is_fixedsize_array{T}(m, ::Type{T})
     (T <: StaticVector || is_ntuple(T)) &&
     fixed_array_length(T) in vector_lengths &&
-    eltype(T) <: Numbers
+    eltype(T) <: Numbers &&
+    eltype(T) != Bool
 end
 
 # Functionality to remove unsupported characters from the source
@@ -166,7 +160,7 @@ function is_supported_char(io::CIO, char)
     # in a name
     isascii(char) &&
     !Base.isoperator(Symbol(char)) &&
-    !(char in ('.', '#', '(', ')', ',', '{', '}'))  # some ascii codes are not allowed
+    !(char in ('.', '#', '(', ')', ',', '{', '}', ' '))  # some ascii codes are not allowed
 end
 
 """
@@ -199,6 +193,8 @@ function _typename(io::IO, x)
         string(x, "_", join(x.args, "_"))
     elseif isa(x, Symbol)
         string(x)
+    elseif isa(x, UnionAll)
+        string(x)
     elseif isa(x, DataType)
         T = x
         if T <: Tuple{X} where X <: Numbers
@@ -212,7 +208,9 @@ function _typename(io::IO, x)
             Sugar.vecname(io, T)
         elseif T <: Tuple
 
-            str = if (isempty(T.parameters) || T == Tuple)
+            str = if isempty(T.parameters)
+                "EmptyTuple_"
+            elseif T == Tuple
                 "EmptyTuple"
             else
                 str = "Tuple_"
@@ -242,13 +240,13 @@ end
 
 _typename(io::CIO, x::Union{AbstractString, Symbol}) = x
 
-_typename{T <: Number}(io::IO, x::Type{Tuple{T}}) = _typename(io, T)
-_typename(io::IO, x::Type{Float64}) = "float"
+_typename{T <: Numbers}(io::IO, x::Type{Tuple{T}}) = _typename(io, T)
+_typename(io::IO, x::Type{Float64}) = "double"
 _typename(io::IO, x::Type{Float32}) = "float"
-_typename(io::IO, x::Type{Int}) = "int"
+_typename(io::IO, x::Type{Int64}) = "long"
 _typename(io::IO, x::Type{Int32}) = "int"
 _typename(io::IO, x::Type{UInt32}) = "uint"
-_typename(io::IO, x::Type{UInt64}) = "uint"
+_typename(io::IO, x::Type{UInt64}) = "ulong"
 _typename(io::IO, x::Type{UInt8}) = "uchar"
 _typename(io::IO, x::Type{Bool}) = "bool"
 _typename{T}(io::IO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
@@ -274,19 +272,28 @@ let hash_dict = Dict{Any, Int}(), counter = 0
     end
 end
 
-function functionname(io::CIO, method::LazyMethod)
-    if istype(method)
+function Sugar.functionname(io::CIO, method::Type{T}) where T
+    string('(', typename(io, T), ')')
+end
+function Sugar.functionname(io::CIO, method::LazyMethod)
+    func = if istype(method)
         # This should only happen, if the function is actually a type constructor
-        return string('(', _typename(io, method.signature), ')')
+        method.signature
+    else
+        Sugar.getfunction(method)
     end
-    f_sym = Symbol(typeof(Sugar.getfunction(method)).name.mt.name)
+    f_sym = if isa(func, Type)
+        functionname(io, func)
+    else
+        Base.function_name(func)
+    end
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
     end
-    str = if isa(io, Sugar.ASTIO) && supports_overloading(io)
-        string(f_sym)
-    else
+    str = if isfunction(method) && !supports_overloading(io)
         string(f_sym, '_', signature_hash(method.signature[2]))
+    elseif istype(method)
+        return string(f_sym)
     end
     if isa(io, Sugar.ASTIO)
         symbol_hygiene(io, str)
@@ -352,11 +359,8 @@ show_linenumber(io::CIO, line) = show_comment(io, " line $line:")
 show_linenumber(io::CIO, line, file) = show_comment(io, "$file $line $line")
 
 
-function show(io::CIO, x::Type)
-    print(io, string("TYP_INST_", typename(io, Type{x})))
-end
 function show_unquoted(io::CIO, x::Type, ::Int, ::Int)
-    print(io, string("TYP_INST_", typename(io, Type{x})))
+    print(io, "TYP_INST_", typename(io, Type{x}))
 end
 function show_unquoted(io::CIO, sym::Symbol, ::Int, ::Int)
     print(io, Symbol(symbol_hygiene(io, sym)))
@@ -368,6 +372,7 @@ function show_unquoted(io::CIO, f::F, ::Int, ::Int) where F <: Sugar.AllFuncs
     print(io, "FUNC_INST_", typename(io, F))
 end
 
+const expr_calls_extended = merge(expr_calls, Dict(:constructor => ('{', '}')))
 # show a normal (non-operator) function call, e.g. f(x,y) or A[z]
 function show_call(io::CIO, head, func, func_args, indent)
     if head == :curly && Sugar.expr_type(func) <: Type# typeconstructors
@@ -375,31 +380,49 @@ function show_call(io::CIO, head, func, func_args, indent)
         show_unquoted(io, func, indent)
         return
     end
-    op, cl = expr_calls[head]
-    print(io, '(')
+    op, cl = expr_calls_extended[head]
+    # print(io, '(')
     if head == :ref
+        FT = Sugar.expr_type(func)
+        if is_fixedsize_array(FT) && length(func_args) == 1
+            # Special case for small vectors an an integer variable as index
+            IDXT = Sugar.expr_type(func_args[1])
+            if IDXT <: Integer && !isa(func_args[1], Integer)
+                ET = eltype(FT)
+                print(io, "(($(typename(io, ET))*)&") # convert to pointer
+                show_unquoted(io, func, indent)
+                print(io, ")[")
+                show_unquoted(io, func_args[1])
+                print(io, "]")
+                return
+            end
+        end
+        print(io, '(')
         show_unquoted(io, func, indent)
-        if Sugar.expr_type(func) <: Tuple{T} where T <: cli.Numbers
+        print(io, ')')
+        if FT <: Tuple{T} where T <: cli.Numbers
             # we Tuple{<: Numbers} is treated as scalar, so we don't print the index expression
-            print(io, ')')
             return
         end
     else
-        show_unquoted(io, func, indent, -1)
+        print(io, functionname(io, func))
     end
-    print(io, ')')
     if head == :(.)
         print(io, '.')
     end
-    if !isempty(func_args) && isa(func_args[1], Expr) && func_args[1].head == :parameters
-        print(io, op)
-        show_list(io, func_args[2:end], ", ", indent)
-        print(io, "; ")
-        show_list(io, func_args[1].args, ", ", indent)
-        print(io, cl)
-    else
-        show_enclosed_list(io, op, func_args, ", ", cl, indent)
+    addition_tracked_object = []
+    m = io.method
+    for elem in func_args
+        T = Sugar.expr_type(m, elem)
+        contains, fields = Sugar.contains_tracked_type(m, T)
+        if contains && haskey(m.cache, :tracked_types)
+            fields = m.cache[:tracked_types][elem]
+            for field in fields
+                push!(addition_tracked_object, last(field))
+            end
+        end
     end
+    show_enclosed_list(io, op, vcat(func_args, addition_tracked_object), ", ", cl, indent)
     return
 end
 
@@ -415,7 +438,6 @@ function show_block(io::CIO, head, args::Vector, body, indent::Int)
         show_list(io, args, ", ", indent)
         print(io, "){")
     end
-
     ind = head === :module || head === :baremodule ? indent : indent + indent_width
     exs = (is_expr(body, :block) || is_expr(body, :body)) ? body.args : Any[body]
     for (i, ex) in enumerate(exs)
@@ -464,11 +486,14 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         func_args = args[2:end]
         fname = Symbol(functionname(io, f))
         if fname == :getfield && nargs == 3
-            show_unquoted(io, args[2], indent) # type to be accessed
+            accessed, fieldname = args[2], args[3]
+            m = io.method
+            tt = Sugar.expr_type(ex)
+            show_unquoted(io, accessed, indent) # type to be accessed
             print(io, '.')
-            show_unquoted(io, args[3], indent)
+            fieldname = isa(fieldname, QuoteNode) ? fieldname.value : fieldname
+            print(io, fieldname)
         else
-            # TODO handle getfield
             func_prec = operator_precedence(fname)
             # scalar multiplication (i.e. "100x")
             if (
@@ -603,19 +628,45 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
     elseif (head === :block) || (head === :body)
         show_block(io, "", ex, indent); print(io, "}")
 
+    elseif (head === :new)
+        constr_args = args[2:end]
+        if isempty(constr_args)
+            push!(constr_args, 0f0)
+        end
+        show_call(io, :constructor, args[1], constr_args, indent)
     elseif head === :return
         if length(args) == 1
-            if !(isa(args[1], Expr) && (args[1].typ == Void || args[1] === nothing))
-                # if returns void, we need to omit the return statement
-                print(io, "return ")
+            if args[1] != nothing
+                if !(isa(args[1], Expr) && (args[1].typ == Void))
+                    # if returns void, we need to omit the return statement
+                    print(io, "return ")
+                end
+                show_unquoted(io, args[1])
             end
-            show_unquoted(io, args[1])
         else
             # ignore if empty, otherwise, LOL? What's a return with multiple args?
             isempty(args) || error("Unknown return Expr: $ex")
         end
-    elseif (head in (:meta, :inbounds))
+    elseif (head in (:meta, :inbounds, :boundscheck))
         # TODO, just ignore this? Log this? We definitely don't need it in GLSL
+    elseif head == :local_memory_init
+        # e.g. __local float test[100]
+        T, N, name = args
+        print(io, "__local ")
+        show_type(io, T)
+        print(io, ' ')
+        show_name(io, name)
+        print(io, "[$N]")
+    elseif head == :local_memory
+        # take the above initialized name and returns a pointer (local_memory_init & local_memory
+        # are guaranteed to be emitted together)
+        # and now just return &test;
+        T, name = args
+        print(io, "( __local ")
+        show_type(io, T)
+        print(io, " *)(&")
+        show_name(io, name)
+        print(io, ')')
     else
         println(ex)
         unsupported_expr(string(ex), line_number)
@@ -679,5 +730,34 @@ function Sugar.getfuncsource(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
         show_unquoted(CIO(io, x), Sugar.getast!(x), 0, 0)
     end
 end
+
+
+function Sugar.getfuncargs(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+    functype = x.signature[1]
+    calltypes, slots = Sugar.to_tuple(x.signature[2]), Sugar.getslots!(x)
+    n = Sugar.method_nargs(x)
+    start = ifelse(Sugar.isclosure(functype), 1, 2)
+    unpacked_pointers = []
+    args = map(start:n) do i
+        argtype, name = slots[i]
+        # Slot types might be less specific, e.g. when the variable is unused it might end up as Any.
+        # but generally the slot type is the correct one, especially in the context of varargs.
+        if !isleaftype(argtype) && length(calltypes) <= i
+            argtype = calltypes[i - 1]
+        end
+        if Sugar.contains_tracked_type(x, argtype)[1] && haskey(x.cache, :tracked_types)
+            pointers = map(x.cache[:tracked_types][TypedSlot(i, argtype)]) do field
+                ptr_typ = Sugar.get_fields_type(argtype, field[1:end-1])
+                :($(last(field))::$ptr_typ)
+            end
+            append!(unpacked_pointers, pointers)
+        end
+        expr = :($(name)::$(argtype))
+        expr.typ = argtype
+        expr
+    end
+    vcat(args, unpacked_pointers)
+end
+
 
 include("rewriting.jl")
