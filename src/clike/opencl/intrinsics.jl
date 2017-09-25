@@ -83,6 +83,7 @@ end
 
 @cl_intrinsic erfc(::T) where T <: Floats = ret(T)
 @cl_intrinsic erf(::T) where T <: Floats = ret(T)
+@cl_intrinsic remainder(::T, ::T) where T <: Floats = ret(T)
 
 
 for N in vector_lengths
