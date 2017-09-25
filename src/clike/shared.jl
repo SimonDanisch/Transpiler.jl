@@ -98,7 +98,7 @@ fabs(x::AbstractFloat) = abs(x)
 const functions = (
     +, -, *, /, ^, <=, .<=, !, <, >, ==, !=, |, &, %,
     <<, >>,
-    sqrt, mod, fract, log,
+    sqrt, fract, log,
     round, floor, ceil, trunc,
     sin, sinpi, sinh, asin, asinh,
     cos, cospi, cosh, acos, acosh,
@@ -108,7 +108,8 @@ const functions = (
     exp, exp2, exp10, expm1,
     log, log2, log10, log1p,
     length, clamp, fma, fabs, isinf, isnan, sign,
-    cbrt, copysign
+    cbrt, copysign, signbit
+    # fast math
 )
 
 function fixed_array_length(T)
@@ -214,7 +215,13 @@ function _typename(io::IO, x)
                 "EmptyTuple"
             else
                 str = "Tuple_"
-                tstr = map(x-> typename(io, x), T.parameters)
+                tstr = map(T.parameters) do t
+                    if t <: Tuple{X} where X
+                        string("Tupl_", typename(io, t))
+                    else
+                        typename(io, t)
+                    end
+                end
                 str *= join(tstr, "_")
             end
             str
@@ -223,7 +230,11 @@ function _typename(io::IO, x)
             if !isempty(T.parameters)
                 tstr = map(T.parameters) do t
                     if isa(t, DataType)
-                        typename(io, t)
+                        if t <: Tuple{X} where X
+                            string("Tupl_", typename(io, t))
+                        else
+                            typename(io, t)
+                        end
                     else
                         string(t)
                     end
@@ -281,6 +292,15 @@ function Sugar.functionname(io::CIO, method::LazyMethod)
         method.signature
     else
         Sugar.getfunction(method)
+    end
+    if func == %
+        # % seems to be an operator that is printed as rem (?!)
+        # TODO, are there more? This is only important for operators that are also intrinsics
+        return :(%)
+
+    end
+    if func == cli.intrinsic_select
+        return :select
     end
     f_sym = if isa(func, Type)
         functionname(io, func)

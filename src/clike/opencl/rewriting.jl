@@ -9,6 +9,12 @@ function rewrite_backend_specific{F}(m::CLMethod, f::F, types, expr)
     elseif f == abs && length(types) == 1 && all(t-> t <: cli.Floats, types)
         expr.args[1] = LazyMethod(li, fabs, types)
         return true, expr
+    elseif f == mod && length(types) == 2 && all(t-> t <: cli.Ints, types)
+        expr.args[1] = LazyMethod(li, %, types)
+        return true, expr
+    elseif f == rem && length(types) == 2 && all(t-> t <: cli.Ints, types)
+        expr.args[1] = LazyMethod(li, %, types)
+        return true, expr
     elseif f == muladd && length(types) == 3 && all(t-> t <: cli.Floats, types)
         expr.args[1] = LazyMethod(li, fma, types)
         return true, expr

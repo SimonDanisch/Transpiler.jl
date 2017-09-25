@@ -64,6 +64,8 @@ end
 @cl_intrinsic sizeof(x::Any) = ret(Cuint)
 
 
+@cl_intrinsic intrinsic_select(a::T, b::T, c::Any) where T = ret(T)
+
 for (a, b) in (
         Float32 => UInt32,
         Float64 => UInt64,
@@ -71,9 +73,9 @@ for (a, b) in (
         Int64 => UInt64,
         Bool => Bool,
     )
-    @eval Base.select(a::$a, b::$a, c::$b) = Bool(c) ? a : b
-    @eval @cl_intrinsic select(a::$a, b::$a, c::$b) = ret($a)
-    @eval cl_select(a::$a, b::$a, c::Bool) = CLIntrinsics.select(a, b, $b(c))
+    if a != Bool
+        @eval cl_select(a::$a, b::$a, c::Bool) = intrinsic_select(a, b, $b(c))
+    end
 end
 
 # @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)
@@ -83,6 +85,7 @@ end
 
 @cl_intrinsic erfc(::T) where T <: Floats = ret(T)
 @cl_intrinsic erf(::T) where T <: Floats = ret(T)
+@cl_intrinsic remainder(::T, ::T) where T <: Floats = ret(T)
 
 
 for N in vector_lengths

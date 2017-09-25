@@ -119,6 +119,8 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     # first give the backends a chance to do backend specific rewriting
     rewritten, expr = rewrite_backend_specific(method, f, types, expr)
     rewritten && return expr
+    rewritten, expr = rewrite_fastmath(f, types, li, expr)
+    rewritten && return expr
     # if nothing got rewritten, do the backend independant rewrites:
     if f in (getindex, setindex!)
         return index_expression(method, expr, expr.args[2:end], types)
@@ -128,12 +130,12 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
             Sugar.expr_type(method, expr),
             expr.args[2], c_fieldname(method, types[1], expr.args[3])
         )
-    elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
-        # if we have a static indexed next, we unfold it into a a getindex directly
-        expr.args = expr.args[1:3]
-        types = types[1:2]
-        rexpr = index_expression(method, expr, expr.args[2:end], types)
-        return rexpr
+    # elseif f == Base.indexed_next && length(types) == 3 && isa(expr.args[3], Integer)
+    #     # if we have a static indexed next, we unfold it into a a getindex directly
+    #     expr.args = expr.args[1:3]
+    #     types = types[1:2]
+    #     rexpr = index_expression(method, expr, expr.args[2:end], types)
+    #     return rexpr
     elseif f == convert && length(types) == 2
         if types[1] == Type{types[2]}
             return Sugar.rewrite_ast(li, expr.args[3]) # no convert needed
@@ -181,8 +183,11 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, cl_pow, types)
         return expr
-    elseif f == rem && length(types) == 2 && all(t-> t <: cli.Numbers, types)
+    elseif f == rem && length(types) == 2 && all(t-> t <: cli.Ints, types)
         expr.args[1] = LazyMethod(li, %, types)
+        return expr
+    elseif f == rem && length(types) == 2 && all(t-> t <: cli.Floats, types)
+        expr.args[1] = LazyMethod(li, cli.remainder, types)
         return expr
     elseif (f == (⊻)) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, ^, types)
@@ -195,4 +200,24 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     end
     expr.args[1] = method
     return expr
+end
+
+# get the concrete function objects
+const fast_ops = getfield.(Base.FastMath, collect(values(Base.FastMath.fast_op)))
+const slow_ops = getfield.(Base.FastMath, collect(keys(Base.FastMath.fast_op)))
+
+const fast_op_2_op = Dict(zip(fast_ops, slow_ops))
+
+function rewrite_fastmath(op, types, li, expr)
+    if haskey(fast_op_2_op, op)
+        slow_op = fast_op_2_op[op]
+        if Sugar.isintrinsic(li, slow_op, types)
+            # actually, most intrinsics in OpenCL are already "fast ops"
+            m = LazyMethod(li, slow_op, types)
+            push!(li, m)
+            expr.args[1] = m
+            return true, expr
+        end
+    end
+    return false, expr
 end
