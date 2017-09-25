@@ -257,3 +257,34 @@ __kernel float4 ntuple_test_13(Val_4 x2unused2)
 }
 """
 @test compare_source == source
+
+
+function testifelse(a, b)
+    ifelse(a == b, a, b)
+end
+
+
+source, method, name = Transpiler.kernel_source(testifelse, (Int, Int))
+println(source)
+
+testsource = """// dependencies
+// #testifelse
+__constant int FUNC_INST_x1testifelse = 0;
+typedef int x1testifelse; // empty type emitted as an int
+// Transpiler.CLIntrinsics.#cl_select
+__constant int FUNC_INST_Transpiler2CLIntrinsics21cl_select = 0;
+typedef int Transpiler2CLIntrinsics21cl_select; // empty type emitted as an int
+// (Transpiler.CLIntrinsics.cl_select, Tuple{Int64,Int64,Bool})
+long cl_select_1(long a, long b, bool c)
+{
+    return select(a, b, (ulong)(c));
+}
+// ########################
+// Main inner function
+// (testifelse, (Int64, Int64))
+__kernel long testifelse_2(long a, long b)
+{
+    return cl_select_1(a, b, a == b);
+}
+"""
+@test source == testsource
