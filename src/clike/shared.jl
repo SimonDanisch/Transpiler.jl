@@ -294,7 +294,10 @@ function Sugar.functionname(io::CIO, method::LazyMethod)
         Sugar.getfunction(method)
     end
     if func == %
+        # % seems to be an operator that is printed as rem (?!)
+        # TODO, are there more? This is only important for operators that are also intrinsics
         return :(%)
+
     end
     f_sym = if isa(func, Type)
         functionname(io, func)
