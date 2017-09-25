@@ -71,9 +71,11 @@ for (a, b) in (
         Int64 => UInt64,
         Bool => Bool,
     )
-    @eval Base.select(a::$a, b::$a, c::$b) = Bool(c) ? a : b
-    @eval @cl_intrinsic select(a::$a, b::$a, c::$b) = ret($a)
-    @eval cl_select(a::$a, b::$a, c::Bool) = CLIntrinsics.select(a, b, $b(c))
+
+    @eval @cl_intrinsic cl_select(a::$a, b::$a, c::$b) = ret($a)
+    if a != Bool
+        @eval cl_select(a::$a, b::$a, c::Bool) = cl_select(a, b, $b(c))
+    end
 end
 
 # @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)

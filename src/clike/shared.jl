@@ -299,6 +299,9 @@ function Sugar.functionname(io::CIO, method::LazyMethod)
         return :(%)
 
     end
+    if func == cli.cl_select
+        return :select
+    end
     f_sym = if isa(func, Type)
         functionname(io, func)
     else
