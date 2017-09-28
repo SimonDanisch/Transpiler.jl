@@ -33,8 +33,10 @@ function kernel_source(f::Function, args::NTuple{N, <: DataType}) where N
     # add compute program dependant infos
     io = CLIO(IOBuffer(), method)
     println(io, "// Inbuilds")
+    # We need to have bool as an intrinsic, but that means it won't be printed as a dependency.
+    # so we need to insert it here
     println(io, "typedef char JLBool;")
-    
+
     println(io, "// dependencies")
     visited = Set()
     for dep in dependencies!(method)
@@ -76,6 +78,8 @@ function Sugar.gettypesource(x::CLMethod)
     else
         if T <: Symbol # ignore for now?
             return ""
+        elseif T == Bool
+            return "typedef char JLBool;"
         elseif isleaftype(T) && sizeof(T) == 0 && nfields(T) == 0
             # emit empty types as Int32, since struct can't be empty
             str = "typedef int $tname; // empty type emitted as an int"

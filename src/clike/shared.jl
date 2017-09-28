@@ -208,7 +208,6 @@ function _typename(io::IO, x)
         elseif is_fixedsize_array(io, T)
             Sugar.vecname(io, T)
         elseif T <: Tuple
-
             str = if isempty(T.parameters)
                 "EmptyTuple_"
             elseif T == Tuple
