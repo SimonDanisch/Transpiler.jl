@@ -32,6 +32,9 @@ function kernel_source(f::Function, args::NTuple{N, <: DataType}) where N
     funcsource = getsource!(method)
     # add compute program dependant infos
     io = CLIO(IOBuffer(), method)
+    println(io, "// Inbuilds")
+    println(io, "typedef char JLBool;")
+    
     println(io, "// dependencies")
     visited = Set()
     for dep in dependencies!(method)
