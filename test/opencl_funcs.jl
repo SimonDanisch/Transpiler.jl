@@ -150,7 +150,9 @@ end
 @testset "custom getindex" begin
 
     source, method, name = Transpiler.kernel_source(custom_index_test, (typeof(1f0*I),))
-    source_compare = """// dependencies
+    source_compare = """// Inbuilds
+    typedef char JLBool;
+    // dependencies
     // #custom_index_test
     __constant int FUNC_INST_x2custom_index_test = 0;
     typedef int x2custom_index_test; // empty type emitted as an int
@@ -167,7 +169,7 @@ end
     __constant int FUNC_INST_Transpiler1CLIntrinsics12cl_select = 0;
     typedef int Transpiler1CLIntrinsics12cl_select; // empty type emitted as an int
     // (Transpiler.CLIntrinsics.cl_select, Tuple{Float32,Float32,Bool})
-    float cl_select_9(float a, float b, bool c)
+    float cl_select_9(float a, float b, JLBool c)
     {
         return select(a, b, (uint)(c));
     }
@@ -213,7 +215,9 @@ end
 
 @testset "ntuple" begin
     source, method, name = Transpiler.kernel_source(ntuple_test, (Val{4},))
-    compare_source = """// dependencies
+    compare_source = """// Inbuilds
+    typedef char JLBool;
+    // dependencies
     // #ntuple_test
     __constant int FUNC_INST_x2ntuple_test = 0;
     typedef int x2ntuple_test; // empty type emitted as an int
@@ -260,7 +264,9 @@ end
 
 @testset "ifelse" begin
     source, method, name = Transpiler.kernel_source(testifelse, (Int, Int))
-    testsource = """// dependencies
+    testsource = """// Inbuilds
+    typedef char JLBool;
+    // dependencies
     // #testifelse
     __constant int FUNC_INST_x2testifelse = 0;
     typedef int x2testifelse; // empty type emitted as an int
@@ -268,7 +274,7 @@ end
     __constant int FUNC_INST_Transpiler1CLIntrinsics12cl_select = 0;
     typedef int Transpiler1CLIntrinsics12cl_select; // empty type emitted as an int
     // (Transpiler.CLIntrinsics.cl_select, Tuple{Int64,Int64,Bool})
-    long cl_select_14(long a, long b, bool c)
+    long cl_select_14(long a, long b, JLBool c)
     {
         return select(a, b, (ulong)(c));
     }
@@ -291,7 +297,9 @@ end
 
 @testset "fastmath" begin
     source, method, name = Transpiler.kernel_source(testfastmath, (Complex64,))
-    testsource = """// dependencies
+    testsource = """// Inbuilds
+    typedef char JLBool;
+    // dependencies
     // #testfastmath
     __constant int FUNC_INST_x2testfastmath = 0;
     typedef int x2testfastmath; // empty type emitted as an int
