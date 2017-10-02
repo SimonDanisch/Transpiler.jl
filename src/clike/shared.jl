@@ -208,7 +208,6 @@ function _typename(io::IO, x)
         elseif is_fixedsize_array(io, T)
             Sugar.vecname(io, T)
         elseif T <: Tuple
-
             str = if isempty(T.parameters)
                 "EmptyTuple_"
             elseif T == Tuple
@@ -259,7 +258,7 @@ _typename(io::IO, x::Type{Int32}) = "int"
 _typename(io::IO, x::Type{UInt32}) = "uint"
 _typename(io::IO, x::Type{UInt64}) = "ulong"
 _typename(io::IO, x::Type{UInt8}) = "uchar"
-_typename(io::IO, x::Type{Bool}) = "bool"
+_typename(io::IO, x::Type{Bool}) = "JLBool"
 _typename{T}(io::IO, x::Type{Ptr{T}}) = "$(typename(io, T)) *"
 
 _typename{F <: Function}(io::CIO, f::F) = _typename(io, F.name.mt.name)
