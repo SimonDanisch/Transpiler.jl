@@ -71,11 +71,9 @@ for (a, b) in (
         Float64 => UInt64,
         Int32 => UInt32,
         Int64 => UInt64,
-        Bool => Bool,
+        Bool => Bool
     )
-    if a != Bool
-        @eval cl_select(a::$a, b::$a, c::Bool) = intrinsic_select(a, b, $b(c))
-    end
+    @eval cl_select(a::$a, b::$a, c::Bool) = intrinsic_select(a, b, $b(c))
 end
 
 # @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)

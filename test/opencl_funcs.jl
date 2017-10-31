@@ -22,7 +22,7 @@ mapsource = """void mapkernel_1(Base123 f, __global float *  a, __global float *
     float _ssavalue_0;
     _ssavalue_0 = (a)[gid - 0x00000001] + (b)[gid - 0x00000001];
     (c)[gid - 0x00000001] = _ssavalue_0;
-    ;
+    return;
 }"""
 
 @testset "map kernel" begin
@@ -85,7 +85,7 @@ broadcastsource = """void broadcast_kernel_5(__global float *  A, Base123 f, uin
         (A)[i - 0x00000001] = _ssavalue_0;
     };
     ;
-    ;
+    return;
 }"""
 @testset "broadcast kernel" begin
     @test source == broadcastsource
@@ -148,7 +148,6 @@ function custom_index_test(x)
 end
 
 @testset "custom getindex" begin
-
     source, method, name = Transpiler.kernel_source(custom_index_test, (typeof(1f0*I),))
     source_compare = """// Inbuilds
     typedef char JLBool;
@@ -157,8 +156,8 @@ end
     __constant int FUNC_INST_x2custom_index_test = 0;
     typedef int x2custom_index_test; // empty type emitted as an int
     // UniformScaling{Float32}
-    struct  __attribute__ ((packed)) TYPUniformScaling_float{
-        float x4;
+    struct __attribute__((packed)) TYPUniformScaling_float{
+        float __attribute__((aligned (4))) x4;
     };
     typedef struct TYPUniformScaling_float UniformScaling_float;
 
@@ -212,7 +211,6 @@ inner(i) = Float32(i) * 77f0
 function ntuple_test(::Val{N}) where N
     ntuple(inner, Val{N})
 end
-
 @testset "ntuple" begin
     source, method, name = Transpiler.kernel_source(ntuple_test, (Val{4},))
     compare_source = """// Inbuilds
@@ -261,7 +259,6 @@ end
 function testifelse(a, b)
     ifelse(a == b, a, b)
 end
-
 @testset "ifelse" begin
     source, method, name = Transpiler.kernel_source(testifelse, (Int, Int))
     testsource = """// Inbuilds
@@ -286,7 +283,6 @@ end
         return cl_select_14(a, b, a == b);
     }
     """
-
     @test source == testsource
 end
 
@@ -294,7 +290,6 @@ end
 function testfastmath(a::Complex64)
     @fastmath exp(a)
 end
-
 @testset "fastmath" begin
     source, method, name = Transpiler.kernel_source(testfastmath, (Complex64,))
     testsource = """// Inbuilds
@@ -304,9 +299,9 @@ end
     __constant int FUNC_INST_x2testfastmath = 0;
     typedef int x2testfastmath; // empty type emitted as an int
     // Complex{Float32}
-    struct  __attribute__ ((packed)) TYPComplex_float{
-        float re;
-        float im;
+    struct __attribute__((packed)) TYPComplex_float{
+        float __attribute__((aligned (4))) re;
+        float __attribute__((aligned (4))) im;
     };
     typedef struct TYPComplex_float Complex_float;
 

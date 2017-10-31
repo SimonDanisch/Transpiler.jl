@@ -64,6 +64,30 @@ function show(io::CLIO, x::Union{Float32, Float64})
     end
 end
 
+Base.@pure datatype_align(x::T) where {T} = datatype_align(T)
+Base.@pure function datatype_align(::Type{T}) where {T}
+    # typedef struct {
+    #     uint32_t nfields;
+    #     uint32_t alignment : 9;
+    #     uint32_t haspadding : 1;
+    #     uint32_t npointers : 20;
+    #     uint32_t fielddesc_type : 2;
+    # } jl_datatype_layout_t;
+    field = T.layout + sizeof(UInt32)
+    unsafe_load(convert(Ptr{UInt16}, field)) & convert(Int16, 2^9-1)
+end
+
+function sum_fields(::Type{T}) where T
+    if nfields(T) == 0
+        return sizeof(T)
+    else
+        x = 0
+        for field in fieldnames(T)
+            x += sizeof(fieldtype(T, field))
+        end
+        return x
+    end
+end
 
 function Sugar.gettypesource(x::CLMethod)
     T = x.signature
@@ -89,18 +113,29 @@ function Sugar.gettypesource(x::CLMethod)
             return str
         else
             sprint() do io
-                print(io, "struct  __attribute__ ((packed)) TYP$tname{\n")
+                # if no padding in fields
+                # packed = if sum_fields(T) == sizeof(T)
+                #     ""
+                # else
+                #     ""
+                # end
+                print(io, "struct __attribute__((packed)) TYP$tname{\n")
                 nf = nfields(T)
                 fields = []
                 if nf == 0 # structs can't be empty
                     # we use float as a short placeholder type.
                     # TODO, are there cases where float is no good?
-                    println(io, "float empty; // structs can't be empty")
+                    println(io, "int empty; // structs can't be empty")
                 else
                     for i in 1:nf
                         FT = fieldtype(T, i)
+                        FTalign = datatype_align(FT)
                         print(io, "    ", typename(EmptyCLIO(), FT))
-                        print(io, ' ')
+                        if !isa(FT, cli.DevicePointer)
+                            print(io, " __attribute__((aligned ($FTalign))) ")
+                        else
+                            print(io, ' ')
+                        end
                         print(io, c_fieldname(x, T, i))
                         println(io, ';')
                     end
