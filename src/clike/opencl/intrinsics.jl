@@ -73,7 +73,7 @@ for (a, b) in (
         Int64 => UInt64,
         Bool => Bool
     )
-    @eval cl_select(a::$a, b::$a, c::Bool) = intrinsic_select(a, b, $b(c))
+    @eval cl_select(a::$a, b::$a, c::Bool) = intrinsic_select(b, a, $b(c))
 end
 
 # @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)
