@@ -296,7 +296,6 @@ function Sugar.functionname(io::CIO, method::LazyMethod)
         # % seems to be an operator that is printed as rem (?!)
         # TODO, are there more? This is only important for operators that are also intrinsics
         return :(%)
-
     end
     if func == cli.intrinsic_select
         return :select
@@ -571,18 +570,6 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
         else
             show_list(io, args, " ", indent, comp_prec)
         end
-
-    # function calls need to transform the function from :call to :calldecl
-    # so that operators are printed correctly
-    elseif head === :function && nargs==2 && is_expr(args[1], :call)
-        # TODO, not sure what this is about
-        show_block(io, head, Expr(:calldecl, args[1].args...), args[2], indent)
-        print(io, "}")
-
-    elseif head === :function && nargs == 1
-        # TODO empty function in GLSL?
-        unsupported_expr("Empty function, $(args[1])", line_number)
-
     # block with argument
     elseif head in (:while, :function, :if) && nargs == 2
         show_block(io, head, args[1], args[2], indent)
@@ -609,15 +596,6 @@ function show_unquoted(io::CIO, ex::Expr, indent::Int, prec::Int)
     elseif (head == :module) && nargs==3 && isa(args[1],Bool)
         show_block(io, args[1] ? :module : :baremodule, args[2], args[3], indent)
         print(io, "}")
-
-    # type declaration
-    elseif (head == :type) && nargs==3
-        # TODO struct
-        show_block(io, args[1] ? :type : :immutable, args[2], args[3], indent)
-        print(io, "}")
-
-    elseif head == :bitstype && nargs == 2
-        unsupported_expr("bitstype", line_number)
 
     # type annotation (i.e. "::Int")
     elseif head == :(::) && nargs == 1
