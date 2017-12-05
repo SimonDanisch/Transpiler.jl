@@ -65,7 +65,8 @@ function show(io::CLIO, x::Union{Float32, Float64})
 end
 
 Base.@pure datatype_align(x::T) where {T} = datatype_align(T)
-Base.@pure function datatype_align(::Type{T}) where {T}
+Base.@pure function datatype_align(::Type{T}) where T
+    isleaftype(T) || return 8
     # typedef struct {
     #     uint32_t nfields;
     #     uint32_t alignment : 9;
