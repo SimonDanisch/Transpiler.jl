@@ -78,17 +78,27 @@ broadcastsource = """void broadcast_kernel_5(__global float *  A, Base123 f, uin
 {
     uint i;
     i = get_global_id(0) + (uint)(1);
-    ;
     if(i <= _prod_2(sz)){
         float _ssavalue_0;
         _ssavalue_0 = broadcast_index_3(arg1, sz, i) + broadcast_index_4(arg2, sz, i);
         (A)[i - 0x00000001] = _ssavalue_0;
     };
-    ;
     return;
 }"""
+
+function test_source(target, result)
+    source_equal = target == result
+    if source_equal
+        @test true
+    else
+        @test false
+        println("source unequal:\ntarget:\n", target)
+        println("result:\n", result)
+    end
+end
 @testset "broadcast kernel" begin
-    @test source == broadcastsource
+    test_source(broadcastsource, source)
+
     deps = dependencies!(cl_mapkernel, true)
     deps_test = [
         typeof(broadcast_kernel),
@@ -140,7 +150,7 @@ end
         };
         return acc;
     }"""
-    @test target_source == source
+    test_source(target_source, source)
 end
 
 function custom_index_test(x)
@@ -170,7 +180,7 @@ end
     // (Transpiler.CLIntrinsics.cl_select, Tuple{Float32,Float32,Bool})
     float cl_select_9(float a, float b, JLBool c)
     {
-        return select(a, b, (uint)(c));
+        return select(b, a, (uint)(c));
     }
     // Symbol
 
@@ -203,8 +213,7 @@ end
         return getindex_7(x, 1, 1);
     }
     """
-    @test source_compare == source
-
+    test_source(source_compare, source)
 end
 
 inner(i) = Float32(i) * 77f0
@@ -253,7 +262,7 @@ end
         return ntuple_11(FUNC_INST_x2inner, TYP_INST_Type5Val5466);
     }
     """
-    @test compare_source == source
+    test_source(compare_source, source)
 end
 
 function testifelse(a, b)
@@ -273,7 +282,7 @@ end
     // (Transpiler.CLIntrinsics.cl_select, Tuple{Int64,Int64,Bool})
     long cl_select_14(long a, long b, JLBool c)
     {
-        return select(a, b, (ulong)(c));
+        return select(b, a, (ulong)(c));
     }
     // ########################
     // Main inner function
@@ -283,7 +292,7 @@ end
         return cl_select_14(a, b, a == b);
     }
     """
-    @test source == testsource
+    test_source(testsource, source)
 end
 
 
@@ -368,5 +377,5 @@ end
         return exp_fast_16(a);
     }
     """
-    @test source == testsource
+    test_source(testsource, source)
 end
