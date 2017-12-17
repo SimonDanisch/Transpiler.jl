@@ -61,7 +61,7 @@ end
 
 Output:
 
-```Julia
+```OpenCL
 // dependant type declarations
 typedef struct {
 float empty; // structs can't be empty
