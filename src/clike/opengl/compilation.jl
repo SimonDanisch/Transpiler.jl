@@ -2,7 +2,9 @@ import Sugar: LazyMethod, supports_overloading, expr_type
 import Sugar: getsource!, dependencies!, istype, isfunction, getfuncargs, isintrinsic
 import Sugar: typename, functionname, show_name, show_type, show_function
 
-
+const GLMethod = LazyMethod{:GL}
+const GEOMMethod = LazyMethod{:GEOM}
+const GLMethods = Union{GLMethod, GEOMMethod}
 
 @compat abstract type AbstractGLIO <: CIO end
 
@@ -16,7 +18,7 @@ type GLIO{T <: IO} <: AbstractGLIO
 end
 
 
-function (::Type{CIO})(io, m::GLMethods)
+function (::Type{CIO})(io, m::GLMethod)
     GLIO(io, m)
 end
 
@@ -25,7 +27,6 @@ supports_overloading(io::GLIO) = true
 include("intrinsics.jl")
 include("printing.jl")
 include("rewriting.jl")
-
 
 
 #to_gl_types{T}(::Type{T}) = T

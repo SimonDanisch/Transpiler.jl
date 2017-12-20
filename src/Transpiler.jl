@@ -3,13 +3,11 @@ module Transpiler
 
 using StaticArrays, Compat
 using Sugar, DataStructures
-using GLAbstraction, ModernGL
-
+using ModernGL, GLAbstraction
 
 include("clike/shared.jl")
-include("clike/opengl/compilation.jl")
 include("clike/opencl/printing.jl")
-
+include("clike/opengl/compilation.jl")
 
 function empty_caches!()
     empty_replace_cache!()
