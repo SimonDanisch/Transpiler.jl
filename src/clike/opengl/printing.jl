@@ -39,7 +39,7 @@ function Sugar.gettypesource(x::GLMethods)
                 FT = fieldtype(T, i)
                 print(io, "    ", typename(EmptyCIO(), FT))
                 print(io, ' ')
-                print(io, c_fieldname(T, i))
+                print(io, c_fieldname(x, T, i))
                 println(io, ';')
             end
         end

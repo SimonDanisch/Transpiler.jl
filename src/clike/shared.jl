@@ -69,6 +69,26 @@ end
 const vecs = (_vecs...)
 const Vecs = Union{vecs...}
 
+function isintrinsic(x::CMethods)
+    if isfunction(x)
+        isintrinsic(x, x.signature...)
+    else
+        is_native_type(x, x.signature)
+    end
+end
+
+function isintrinsic(m::CMethods, func::ANY, sig_tuple::ANY)
+    # constructors are intrinsic. TODO more thorow lookup to match actual inbuild constructor
+    isa(func, DataType) && is_native_type(m, func) && return true
+    func == tuple && return true # TODO match against all Base intrinsics?
+    func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
+    func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
+    # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true
+    # shared intrinsic functions should all work on all native types.
+    # TODO, find exceptions where this isn't true
+    func in functions && all(x-> is_native_type(m, x), Sugar.to_tuple(sig_tuple)) && return true
+    backend_intrinsic(m, func, sig_tuple)
+end
 
 ##################################################
 # Intrinsics that don't have a julia counterpart:

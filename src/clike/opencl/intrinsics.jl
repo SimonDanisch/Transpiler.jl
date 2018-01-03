@@ -107,32 +107,17 @@ import .cli: GlobalPointer, DevicePointer
 
 import Sugar: typename, isintrinsic
 
-function is_native_type(m::LazyMethod, T)
+function is_native_type(m::CLMethod, T)
     T <: cli.Types || is_fixedsize_array(m, T) || T <: Tuple{T} where T <: cli.Numbers
 end
 
-function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
-    # constructors are intrinsic. TODO more thorow lookup to match actual inbuild constructor
-    isa(func, DataType) && is_native_type(m, func) && return true
-    func == tuple && return true # TODO match against all Base intrinsics?
-    func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
-    func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
-    # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true
-    # shared intrinsic functions should all work on all native types.
-    # TODO, find exceptions where this isn't true
-    func in functions && all(x-> is_native_type(m, x), Sugar.to_tuple(sig_tuple)) && return true
+function backend_intrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     haskey(cli.intrinsic_signatures, func) || return false
     sig = cli.intrinsic_signatures[func]
     sig_tuple <: sig
 end
 
-function isintrinsic(x::CLMethod)
-    if isfunction(x)
-        isintrinsic(x, x.signature...)
-    else
-        is_native_type(x, x.signature)
-    end
-end
+
 
 Base.getindex{T}(a::cli.LocalPointer{T}, i::Integer) = cli.ret(T)
 Base.getindex{T}(a::GlobalPointer{T}, i::Integer) = cli.ret(T)

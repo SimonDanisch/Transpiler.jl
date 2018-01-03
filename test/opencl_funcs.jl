@@ -8,25 +8,25 @@ function mapkernel(f, a, b, c)
     c[gid] = f(a[gid], b[gid])
     return
 end
-
+function test_source(target, result)
+    source_equal = target == result
+    if source_equal
+        @test true
+    else
+        @test false
+        println("source unequal:\ntarget:\n", target)
+        println("result:\n", result)
+    end
+end
 # empty caches
 Transpiler.empty_caches!()
 
 args = (typeof(+), cli.GlobalPointer{Float32}, cli.GlobalPointer{Float32}, cli.GlobalPointer{Float32})
 cl_mapkernel = CLMethod((mapkernel, args))
 source = Sugar.getsource!(cl_mapkernel)
-mapsource = """void mapkernel_1(Base123 f, __global float *  a, __global float *  b, __global float *  c)
-{
-    uint gid;
-    gid = get_global_id(0) + (uint)(1);
-    float _ssavalue_0;
-    _ssavalue_0 = (a)[gid - 0x00000001] + (b)[gid - 0x00000001];
-    (c)[gid - 0x00000001] = _ssavalue_0;
-    return;
-}"""
 
 @testset "map kernel" begin
-    @test source == mapsource
+    test_source(source, mapsource)
     deps = dependencies!(cl_mapkernel, true)
     deps_test = [
         Int64,
@@ -86,16 +86,7 @@ broadcastsource = """void broadcast_kernel_5(__global float *  A, Base123 f, uin
     return;
 }"""
 
-function test_source(target, result)
-    source_equal = target == result
-    if source_equal
-        @test true
-    else
-        @test false
-        println("source unequal:\ntarget:\n", target)
-        println("result:\n", result)
-    end
-end
+
 @testset "broadcast kernel" begin
     test_source(broadcastsource, source)
 
