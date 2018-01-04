@@ -16,8 +16,12 @@ They'll be addressable via getindex, but in another language it must be getfield
 """
 supports_indexing(m::LazyMethod, T) = false
 
+"""
+Types that are only indexable via static indices.
+"""
+needs_static_index(m::LazyMethod, T) = true
 
-supported_indices(m::LazyMethod, T, index_types) = false
+supports_indices(m::LazyMethod, T, index_types) = false
 
 to_index(m, t, idx::T) where T <: Integer = (idx - T(1))
 function to_index(m, T, idx)
@@ -26,7 +30,7 @@ function to_index(m, T, idx)
 end
 
 
-function rewrite_indices(m::LazyMethod, T, indices)
+function rewrite_indices(m::CMethods, T, indices)
     map(indices) do idx
         if supports_indexing(m, T) && !(is_fixedsize_array(T) && isa(idx, Integer))
             return to_index(m, T, idx)
@@ -82,7 +86,7 @@ function index_expression(m, expr, args, types)
                     return expr
                 end
             end
-            return indexing
+            indexing
         else
             if (T <: Tuple || is_fixedsize_array(T)) # Julia inbuilds allowing getindex, but need to use getfield in C
                 if all(x-> isa(x, Integer), indices)
@@ -96,9 +100,11 @@ function index_expression(m, expr, args, types)
                 expr
             end
         end
+        return ret
+    else
+        expr.args[1] = m # leave getindex
+        return expr
     end
-    expr.args[1] = m # leave getindex
-    return expr
 end
 
 function emit_constructor(m::CMethods, realtype, args)

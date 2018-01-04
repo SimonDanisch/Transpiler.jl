@@ -152,18 +152,18 @@ function Base.setindex!{T <: Vecs}(a::GlobalPointer{T}, value::T, i::Integer)
 end
 
 
-function supports_indexing(m::LazyMethod, ::Type{T}) where T
+function supports_indexing(m::CLMethod, ::Type{T}) where T
     is_fixedsize_array(T) || T <: DevicePointer
 end
 
-function supports_indices(m::LazyMethod, ::Type{<: GlobalPointer{T}}, index_types) where T
+function supports_indices(m::CLMethod, ::Type{<: GlobalPointer{T}}, index_types) where T
     is_fixedsize_array(m, T) && return false # fixed size arrays are implemented via vstore/load
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supports_indices(m::LazyMethod, ::Type{<: DevicePointer}, index_types)
+function supports_indices(m::CLMethod, ::Type{<: DevicePointer}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supported_indices(m::CLMethod, ::Type{<: Tuple}, index_types)
+function supports_indices(m::CLMethod, ::Type{<: Tuple}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
 

@@ -731,7 +731,7 @@ function show_returntype(io, method)
     end
     return
 end
-function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, GLMethods})
+function Sugar.getfuncheader!(x::CMethods)
     if !isdefined(x, :funcheader)
         x.funcheader = if Sugar.isfunction(x)
             sprint() do io
@@ -767,12 +767,11 @@ function Sugar.getfuncsource(x::Union{CLMethod, GLMethods})
 end
 
 
-function Sugar.getfuncargs(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+function Sugar.getfuncargs(x::CMethods)
     functype = x.signature[1]
     calltypes, slots = Sugar.to_tuple(x.signature[2]), Sugar.getslots!(x)
     n = Sugar.method_nargs(x)
     start = ifelse(Sugar.isclosure(functype), 1, 2)
-    unpacked_pointers = []
     args = map(start:n) do i
         argtype, name = slots[i]
         # Slot types might be less specific, e.g. when the variable is unused it might end up as Any.
@@ -780,18 +779,11 @@ function Sugar.getfuncargs(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
         if !isleaftype(argtype) && length(calltypes) <= i
             argtype = calltypes[i - 1]
         end
-        if Sugar.contains_tracked_type(x, argtype)[1] && haskey(x.cache, :tracked_types)
-            pointers = map(x.cache[:tracked_types][TypedSlot(i, argtype)]) do field
-                ptr_typ = Sugar.get_fields_type(argtype, field[1:end-1])
-                :($(last(field))::$ptr_typ)
-            end
-            append!(unpacked_pointers, pointers)
-        end
         expr = :($(name)::$(argtype))
         expr.typ = argtype
         expr
     end
-    vcat(args, unpacked_pointers)
+    vcat(args)
 end
 
 

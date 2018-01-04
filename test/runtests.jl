@@ -4,6 +4,17 @@ using Base.Test
 # TODO, GPUArrays tests most of the functionality of Transpiler.
 # Maybe we should just depend on GPUArrays and run the OpenCL tests here?!
 
+function test_source(target, result)
+    source_equal = target == result
+    if source_equal
+        @test true
+    else
+        @test false
+        println("source not equal:\ntarget:\n", target)
+        println("result:\n", result)
+    end
+end
+
 function test{T}(a::T, b)
     x = sqrt(sin(a) * b) / T(10.0)
     y = T(33.0)x + cos(b)
