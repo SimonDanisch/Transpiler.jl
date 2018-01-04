@@ -16,7 +16,7 @@ testsource = """float test(float a, float b)
     return y * (float)(10.0);
 }"""
 @testset "test kernel" begin
-    @test source == testsource
+    test_source(testsource, source)
 end
 
 decl = GLMethod((fortest, (Float32,)))
@@ -41,7 +41,7 @@ testsource = """float fortest(float x)
     return acc;
 }"""
 @testset "for loops + if elseif " begin
-    @test testsource == source
+    test_source(testsource, source)
 end
 
 using Colors, Transpiler, StaticArrays
@@ -77,7 +77,7 @@ decl = Transpiler.GLMethod((blinnphong, (
 )))
 
 source = Sugar.getsource!(decl);
-println(source)
+
 testsource = """vec3 blinnphong(vec3 V, vec3 N, vec3 L, vec3 color, Shading_float shading, Light_float light)
 {
     vec3 surf_color;
@@ -94,5 +94,5 @@ testsource = """vec3 blinnphong(vec3 V, vec3 N, vec3 L, vec3 color, Shading_floa
 }"""
 
 @testset "blinnphong" begin
-    @test source == testsource
+    test_source(testsource, source)
 end

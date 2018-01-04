@@ -125,7 +125,7 @@ Base.getindex{T}(a::GlobalPointer{T}, i::Integer) = cli.ret(T)
 Base.setindex!{T}(::cli.LocalPointer{T}, ::T, ::Integer) = nothing
 Base.setindex!{T}(a::GlobalPointer{T}, value::T, i::Integer) = nothing
 function Base.setindex!(a::GlobalPointer{T}, value::T2, i::Integer) where {T, T2}
-    setindex!(a, T(value), i)
+    setindex!(a, convert(T, value), i)
     nothing
 end
 

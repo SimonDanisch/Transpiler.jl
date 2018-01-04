@@ -83,7 +83,7 @@ end # end GLIntrinsics
 using .GLIntrinsics
 using GeometryTypes
 const gli = GLIntrinsics
-import .gli: glintrinsic, GLArray, GLDeviceArray, GLTexture
+import .gli: GLArray, GLDeviceArray, GLTexture
 
 glsl_sizeof(::T) where T = sizeof(T) * 8
 # for now we disallow Float64 and map it to Float32 -> super hack alert!!!!
@@ -122,7 +122,7 @@ function typename{T <: SMatrix}(io::AbstractGLIO, ::Type{T})
     string(prescripts[eltype(T)], "mat", M == N ? M : string(M, "x", N))
 end
 
-function vecname{T}(io::AbstractGLIO, t::Type{T})
+function Sugar.vecname{T}(io::AbstractGLIO, t::Type{T})
     N = fixed_array_length(T)
     ET = eltype(T)
     return string(prescripts[ET], "vec", N)

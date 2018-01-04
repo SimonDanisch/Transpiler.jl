@@ -759,7 +759,7 @@ function Sugar.getfuncheader!(x::CMethods)
     x.funcheader
 end
 
-function Sugar.getfuncsource(x::Union{CLMethod, GLMethods})
+function Sugar.getfuncsource(x::CMethods)
     # TODO make this lazy as well?
     sprint() do io
         show_unquoted(CIO(io, x), Sugar.getast!(x), 0, 0)
