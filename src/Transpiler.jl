@@ -3,7 +3,6 @@ module Transpiler
 
 using StaticArrays, Compat
 using Sugar, DataStructures
-using ModernGL, GLAbstraction
 
 import Sugar: isintrinsic
 
