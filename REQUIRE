@@ -4,3 +4,4 @@ Matcha
 StaticArrays 0.3.0
 SpecialFunctions
 MacroTools
+GeometryTypes
