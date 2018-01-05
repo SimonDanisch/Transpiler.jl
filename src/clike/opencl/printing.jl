@@ -4,11 +4,11 @@ using Sugar: LazyMethod, typename, functionname, print_dependencies, getsource!
 import Sugar: supports_overloading
 
 
-@compat abstract type AbstractCLIO <: CIO end
+abstract type AbstractCLIO <: CIO end
 
-immutable EmptyCLIO <: AbstractCLIO end
+struct EmptyCLIO <: AbstractCLIO end
 
-type CLIO{T <: IO} <: AbstractCLIO
+mutable struct CLIO{T <: IO} <: AbstractCLIO
     io::T
     method::CLMethod
 end

@@ -24,11 +24,12 @@ const GEOMMethod = LazyMethod{:GEOM}
 const GLMethods = Union{GLMethod, GEOMMethod}
 const CMethods = Union{CLMethod, GLMethods}
 
-@compat abstract type CIO <: ASTIO end
-immutable EmptyCIO <: CIO
+abstract type CIO <: ASTIO end
+
+struct EmptyCIO <: CIO
 end
 
-immutable EmptyStruct
+struct EmptyStruct
     # Emtpy structs are not supported in OpenCL, which is why we emit a struct
     # with one floating point field
     x::Int32

@@ -2,7 +2,7 @@ __precompile__(true)
 module Transpiler
 
 using StaticArrays, Compat
-using Sugar, DataStructures
+using Sugar
 
 import Sugar: isintrinsic
 

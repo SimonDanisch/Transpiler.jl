@@ -6,13 +6,13 @@ const GLMethod = LazyMethod{:GL}
 const GEOMMethod = LazyMethod{:GEOM}
 const GLMethods = Union{GLMethod, GEOMMethod}
 
-@compat abstract type AbstractGLIO <: CIO end
+abstract type AbstractGLIO <: CIO end
 
-immutable GLFunction{Args <: Tuple}
+struct GLFunction{Args <: Tuple}
     program
     local_size::NTuple{3, Int}
 end
-type GLIO{T <: IO} <: AbstractGLIO
+mutable struct GLIO{T <: IO} <: AbstractGLIO
     io::T
     method::GLMethods
 end
