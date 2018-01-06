@@ -111,6 +111,8 @@ function emit_constructor(m::LazyMethod, realtype, args)
     Sugar.typed_expr(realtype, :curly, m, args...)
 end
 
+gpu_select_value(x::Bool, a, b) = x ? a : b
+
 function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}}, expr)
     f, _types = method.signature
     types = Sugar.to_tuple(_types)
@@ -191,6 +193,9 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
         return expr
     elseif (f == (⊻)) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, ^, types)
+        return expr
+    elseif (f == Base.select_value) && length(types) == 3 && first(types) == Bool
+        expr.args[1] = LazyMethod(li, gpu_select_value, types)
         return expr
     elseif f == (*) && length(types) == 1 && all(t-> t <: cli.Numbers, types)
         m = LazyMethod(li, identity, types)
