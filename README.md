@@ -15,14 +15,20 @@ Right now it's a nice adhoc solution to get our Julia -> GPU compilation efforts
 Also, the tools developed for this packages (e.g. [Sugar](https://github.com/SimonDanisch/Sugar.jl) and [Matcha](https://github.com/SimonDanisch/Matcha.jl)) offer a lot of functionality needed for static linting and introspection into Julia's typed AST's.
 Another option is to use Julia itself as a transpilation target and implement macros from a typed AST, allowing to do more powerful transformations.
 
-Example:
-```Julia
-using Transpiler
-using OpenCL: cl
-import Transpiler.CLTranspiler.cli
-const clt = Transpiler.CLTranspiler
+### Installation
 
-function test{T}(a::T, b)
+```Julia
+Pkg.add("Transpiler")
+```
+
+### Example
+
+```Julia
+using Transpiler: kernel_source
+import Transpiler: cli
+using OpenCL
+
+function test(a::T, b) where {T}
     x = sqrt(sin(a) * b) / T(10.0)
     y = T(33.0)x + cos(b)
     y * T(10.0)
@@ -34,29 +40,36 @@ function mapkernel(f, a, b, c)
     return
 end
 
+# types of mapkernel arguments
+T = cli.GlobalPointer{Float32}
+argtypes = (typeof(test), T, T, T)
+src, method, fname = kernel_source(mapkernel, argtypes)
+
+println(src)
+
+# setup OpenCL buffers, queue and context
 a = rand(Float32, 50_000)
 b = rand(Float32, 50_000)
 device, ctx, queue = cl.create_compute_context()
-a_buff = cl.GlobalPointer(queue, a)
-b_buff = cl.GlobalPointer(queue, b)
-c_buff = cl.GlobalPointer(queue, similar(a))
-args = (test, a_buff, b_buff, c_buff)
+a_buff = cl.Buffer(Float32, ctx, (:r, :copy), hostbuf=a)
+b_buff = cl.Buffer(Float32, ctx, (:r, :copy), hostbuf=b)
+c_buff = cl.Buffer(Float32, ctx, :w, length(a))
 
-cl_mapkernel = clt.CLFunction(mapkernel, args, queue)
+# compile kernel
+p = cl.Program(ctx, source=src) |> cl.build!
+k = cl.Kernel(p, fname)
 
-println(cl_mapkernel.source)
 # call kernel. Accepts kw_args for global and local work size!
 # but can also find them out automatically (in a super primitive way)
+queue(k, size(a), nothing, test, a_buff, b_buff, c_buff)
 
-cl_mapkernel((test, a_buff, b_buff, c_buff))
-r = cl.to_host(c_buff)
-r2 = test.(a, b)
-if all(isapprox.(r, r2))
+r = cl.read(queue, c_buff)
+
+if r ≈ test.(a, b)
     info("Success!")
 else
-    error("Norm should be 0.0f")
+    error("⁉")
 end
-
 ```
 
 Output:
@@ -86,17 +99,11 @@ __kernel void mapkernel_5672850724456951104(__global const _1test *f, __global f
     c[gid - 1] = _ssavalue_0;
     ;
 }
-
-```
-
-If you want to run this example, you need to add and checkout the following packages:
-```Julia
-Pkg.clone("https://github.com/SimonDanisch/Transpiler.jl.git")
 ```
 
 # TODO / Common issues
 
 * compiling constructor code
-* Not sure how to transpile Core._apply
+* Not sure how to transpile `Core._apply`
 * passing around types and constructing them
 * better error handling / logging
