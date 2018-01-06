@@ -126,14 +126,6 @@ function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     sig_tuple <: sig
 end
 
-function isintrinsic(x::CLMethod)
-    if isfunction(x)
-        isintrinsic(x, x.signature...)
-    else
-        is_native_type(x, x.signature)
-    end
-end
-
 Base.getindex{T}(a::cli.LocalPointer{T}, i::Integer) = cli.ret(T)
 Base.getindex{T}(a::GlobalPointer{T}, i::Integer) = cli.ret(T)
 
