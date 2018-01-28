@@ -192,6 +192,9 @@ function Sugar.rewrite_function(method::CMethods, expr)
     elseif (f == (⊻)) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
         expr.args[1] = LazyMethod(li, ^, types)
         return expr
+    elseif (f == Base.select_value) && length(types) == 3 && first(types) == Bool
+        expr.args[1] = LazyMethod(li, gpu_select_value, types)
+        return expr
     elseif f == (*) && length(types) == 1 && all(t-> t <: cli.Numbers, types)
         m = LazyMethod(li, identity, types)
         push!(li, m)

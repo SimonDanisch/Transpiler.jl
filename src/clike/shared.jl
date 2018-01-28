@@ -15,7 +15,7 @@ import Base: is_quoted, is_expr, expr_infix_any
 import Base: show_call, show_unquoted, show
 
 import Sugar: ASTIO, LazyMethod, typename, functionname, _typename, show_name
-import Sugar: supports_overloading, show_type, show_function
+import Sugar: supports_overloading, show_type, show_function, is_native_type, isintrinsic
 
 const CLMethod = LazyMethod{:CL}
 

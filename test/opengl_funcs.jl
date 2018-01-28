@@ -96,3 +96,13 @@ testsource = """vec3 blinnphong(vec3 V, vec3 N, vec3 L, vec3 color, Shading_floa
 @testset "blinnphong" begin
     test_source(testsource, source)
 end
+
+
+using Transpiler
+import Transpiler: emit_vertex_shader
+function vert_volume(lr, test)
+    out = lr
+    return out
+end
+
+test, args = Transpiler.emit_vertex_shader(vert_volume, (Float32, Float32))
