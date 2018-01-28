@@ -1,6 +1,6 @@
 module GLIntrinsics
 
-using StaticArrays, Sugar, GeometryTypes, MacroTools, GLAbstraction
+using StaticArrays, Sugar, GeometryTypes, MacroTools
 
 import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
 import ..Transpiler: fixed_array_length, is_ntuple, is_fixedsize_array, GLMethod
@@ -77,6 +77,7 @@ of the triangle, so they actually do hold the neighboring values needed to calcu
 
 const gl_GlobalInvocationID = Vec3f0(0, 0, 0)
 const gl_FragCoord = Vec4f0(0, 0, 0, 0)
+const gl_VertexID = 0
 
 end # end GLIntrinsics
 

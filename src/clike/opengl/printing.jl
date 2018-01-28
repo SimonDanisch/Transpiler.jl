@@ -152,8 +152,7 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     stypes = Sugar.slottypes(m)
     RT = Sugar.returntype(m)
 
-    vertex_type = first(arguments)
-    vertex_name = snames[2]
+
 
     arg_types = arguments[2:end]
     arg_names = snames[3:nargs]
@@ -184,16 +183,20 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     end)
 
     # Vertex in block
-    println(io, "// vertex input:")
-    Transpiler.show_vertex_input(io, vertex_type, vertex_name)
-    vertex_args = map(Transpiler.typed_type_fields(vertex_type)) do arg
-        fname, T = arg.args
-        Symbol(string(vertex_name, '_', fname))
+    if !isempty(arguments)
+        println(io, "// vertex input:")
+        vertex_type = first(arguments)
+        vertex_name = snames[2]
+        Transpiler.show_vertex_input(io, vertex_type, vertex_name)
+        vertex_args = map(Transpiler.typed_type_fields(vertex_type)) do arg
+            fname, T = arg.args
+            Symbol(string(vertex_name, '_', fname))
+        end
+        vertex_expr = Expr(:call, vertex_type, vertex_args...)
+        vertex_expr.typ = vertex_type
+        unshift!(ast.args, :($vertex_name = $vertex_expr))
+        unshift!(ast.args, :($vertex_name::$vertex_type))
     end
-    vertex_expr = Expr(:call, vertex_type, vertex_args...)
-    vertex_expr.typ = vertex_type
-    unshift!(ast.args, :($vertex_name = $vertex_expr))
-    unshift!(ast.args, :($vertex_name::$vertex_type))
 
 
     # uniform block
@@ -213,15 +216,16 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
         length(out_tuple) != 2 && error(usage)
         glposition, vertexout = out_tuple
         # write to gl_Position
-        push!(ast.args, :(gl_Position = $(glposition)))
+        pos_slot = Sugar.newslot!(m, NTuple{4, Float32}, :gl_Position)
+        push!(ast.args, :($pos_slot = $(glposition)))
         ret_types[2], vertexout
     else
         RT, ret_expr.args[1]
     end
 
-    vertexsym = :vertex_out
+    vertexsym = pos_slot = Sugar.newslot!(m, vertex_out_T, :vertex_out)
     # println(io, Sugar.getsource!(GLMethod(vertex_out_T)))
-    show_varying(io, vertex_out_T, vertexsym, qualifier = :out)
+    show_varying(io, vertex_out_T, :vertex_out, qualifier = :out)
     # write to out
     push!(ast.args, :($vertexsym = $vertex_out_expr))
 
@@ -229,7 +233,7 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     println(io, "// vertex main function:")
     println(io, "void main()")
     # we already declared these, so hint to transpiler not to declare them again
-    push!(m.decls, vertexsym, :gl_Position, vertex_name)
+    # push!(m.decls, vertexsym, :gl_Position, vertex_name)
     src_ast = Sugar.rewrite_ast(m, ast)
     Base.show_unquoted(io, src_ast, 0, 0)
     take!(io.io), vertex_out_T
