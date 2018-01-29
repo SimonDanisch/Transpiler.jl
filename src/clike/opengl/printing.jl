@@ -58,7 +58,7 @@ function glsl_gensym(name)
 end
 
 function show_vertex_input(io, T, name, start_idx = 0)
-    args = typed_type_fields(T)
+    args = typed_type_fields(io, T)
     idx = start_idx
     for arg in args
         fname, T = arg.args
@@ -152,19 +152,18 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     stypes = Sugar.slottypes(m)
     RT = Sugar.returntype(m)
 
-
-
     arg_types = arguments[2:end]
     arg_names = snames[3:nargs]
 
     # get body ast
     Sugar.getcodeinfo!(m) # make sure codeinfo is present
     ast = Sugar.sugared(m.signature..., code_typed)
+    st = Sugar.getslots!(m)
     for i in (nargs + 1):length(stypes)
-        T = stypes[i]
-        slot = SlotNumber(i)
+        T, name = st[i]
+        slot = TypedSlot(i, T)
         push!(m.decls, slot)
-        name = snames[i]
+        push!(m, T)
         tmp = :($name::$T)
         tmp.typ = T
         unshift!(ast.args, tmp)
@@ -186,9 +185,9 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     if !isempty(arguments)
         println(io, "// vertex input:")
         vertex_type = first(arguments)
-        vertex_name = snames[2]
-        Transpiler.show_vertex_input(io, vertex_type, vertex_name)
-        vertex_args = map(Transpiler.typed_type_fields(vertex_type)) do arg
+        vertex_name = Sugar.newslot!(m, vertex_type, snames[2])
+        show_vertex_input(io, vertex_type, vertex_name)
+        vertex_args = map(typed_type_fields(io, vertex_type)) do arg
             fname, T = arg.args
             Symbol(string(vertex_name, '_', fname))
         end
@@ -222,8 +221,8 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     else
         RT, ret_expr.args[1]
     end
-
-    vertexsym = pos_slot = Sugar.newslot!(m, vertex_out_T, :vertex_out)
+    @show typeof(vertex_out_expr)
+    vertexsym = Sugar.newslot!(m, vertex_out_T, :vertex_out)
     # println(io, Sugar.getsource!(GLMethod(vertex_out_T)))
     show_varying(io, vertex_out_T, :vertex_out, qualifier = :out)
     # write to out
@@ -234,6 +233,7 @@ function emit_vertex_shader(shader::Function, arguments::Tuple)
     println(io, "void main()")
     # we already declared these, so hint to transpiler not to declare them again
     # push!(m.decls, vertexsym, :gl_Position, vertex_name)
+    @show ast
     src_ast = Sugar.rewrite_ast(m, ast)
     Base.show_unquoted(io, src_ast, 0, 0)
     take!(io.io), vertex_out_T
