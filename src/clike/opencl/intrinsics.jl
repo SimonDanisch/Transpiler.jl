@@ -75,6 +75,7 @@ for (a, b) in (
     )
     @eval cl_select(a::$a, b::$a, c::Bool) = intrinsic_select(b, a, $b(c))
 end
+cl_select(a, b, c::Bool) = c ? a : b
 
 # @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)
 
@@ -84,6 +85,7 @@ end
 @cl_intrinsic erfc(::T) where T <: Floats = ret(T)
 @cl_intrinsic erf(::T) where T <: Floats = ret(T)
 @cl_intrinsic remainder(::T, ::T) where T <: Floats = ret(T)
+@cl_intrinsic exp(::T) where T <: Floats = ret(T)
 
 
 for N in vector_lengths
@@ -117,6 +119,8 @@ function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     func == tuple && return true # TODO match against all Base intrinsics?
     func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
     func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
+    #TODO better julia/cl intrinsic matching
+    func == Base.select_value && return true
     # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true
     # shared intrinsic functions should all work on all native types.
     # TODO, find exceptions where this isn't true
