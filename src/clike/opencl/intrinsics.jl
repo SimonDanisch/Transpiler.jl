@@ -119,6 +119,7 @@ function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     func == tuple && return true # TODO match against all Base intrinsics?
     func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
     func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
+    #TODO better julia/cl intrinsic matching
     func == Base.select_value && return true
     # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true
     # shared intrinsic functions should all work on all native types.
