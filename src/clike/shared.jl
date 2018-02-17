@@ -105,7 +105,7 @@ const functions = (
     tan, tanh, atan, atanh, atan2,# atanpi, atan2pi, <- julia doesnt have those?!
     max, min,
     abs, pow, normalize, cross, dot, smoothstep, mix,
-    exp, exp2, exp10, expm1,
+    exp2, exp10, expm1,
     log, log2, log10, log1p,
     length, clamp, fma, fabs, isinf, isnan, sign,
     cbrt, copysign, signbit
