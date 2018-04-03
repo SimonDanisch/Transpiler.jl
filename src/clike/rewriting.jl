@@ -161,7 +161,6 @@ function Sugar.rewrite_function(method::CMethods, expr)
     elseif f == broadcast
         fb = Sugar.resolve_func(li, expr.args[2]) # rewrite if necessary
         # most shared intrinsics broadcast over fixedsize arrays
-        @show (fb in functions) fb
         if (fb in functions) && all(t-> is_native_type(li, t), types[2:end])
             shift!(expr.args) # remove broadcast from call expression
             expr.args[1] = LazyMethod(li, fb, types[2:end])
