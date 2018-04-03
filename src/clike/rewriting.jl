@@ -214,7 +214,7 @@ const fast_op_2_op = Dict(zip(fast_ops, slow_ops))
 function rewrite_fastmath(op, types, li, expr)
     if haskey(fast_op_2_op, op)
         slow_op = fast_op_2_op[op]
-        if Sugar.isintrinsic(li, slow_op, types)
+        if Sugar.isintrinsic(li, slow_op, Base.to_tuple_type(types))
             # actually, most intrinsics in OpenCL are already "fast ops"
             m = LazyMethod(li, slow_op, types)
             push!(li, m)

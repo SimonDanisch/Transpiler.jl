@@ -75,6 +75,7 @@ for (a, b) in (
     )
     @eval cl_select(a::$a, b::$a, c::Bool) = intrinsic_select(b, a, $b(c))
 end
+cl_select(a, b, c::Bool) = c ? a : b
 
 # @cl_intrinsic clt(::T, ::T, ::Bool) where {T} = ret(T)
 
@@ -84,6 +85,7 @@ end
 @cl_intrinsic erfc(::T) where T <: Floats = ret(T)
 @cl_intrinsic erf(::T) where T <: Floats = ret(T)
 @cl_intrinsic remainder(::T, ::T) where T <: Floats = ret(T)
+@cl_intrinsic exp(::T) where T <: Floats = ret(T)
 
 
 for N in vector_lengths

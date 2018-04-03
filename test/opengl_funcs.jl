@@ -105,5 +105,5 @@ function vert_volume(lr, test)
     return out, test
 end
 
-test, args = emit_vertex_shader(vert_volume, (Vec4f0, Float32))
-write(STDOUT, test)
+source, args = emit_vertex_shader(vert_volume, (Vec4f0, Float32))
+write(STDOUT, source)
