@@ -30,7 +30,7 @@ function to_index(m, T, idx)
 end
 
 
-function rewrite_indices(m::LazyMethod, T, indices)
+function rewrite_indices(m::CMethods, T, indices)
     map(indices) do idx
         if supports_indexing(m, T) && !(is_fixedsize_array(T) && isa(idx, Integer))
             return to_index(m, T, idx)
@@ -107,13 +107,11 @@ function index_expression(m, expr, args, types)
     end
 end
 
-function emit_constructor(m::LazyMethod, realtype, args)
+function emit_constructor(m::CMethods, realtype, args)
     Sugar.typed_expr(realtype, :curly, m, args...)
 end
 
-gpu_select_value(x::Bool, a, b) = x ? a : b
-
-function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}}, expr)
+function Sugar.rewrite_function(method::CMethods, expr)
     f, _types = method.signature
     types = Sugar.to_tuple(_types)
     li = method.parent
@@ -183,7 +181,7 @@ function Sugar.rewrite_function(method::Union{LazyMethod{:CL}, LazyMethod{:GL}},
     return expr
     # Base.^ is pow in C
     elseif f == (^) && length(types) == 2 && all(t-> t <: cli.Numbers, types)
-        expr.args[1] = LazyMethod(li, cl_pow, types)
+        expr.args[1] = LazyMethod(li, gpu_pow, types)
         return expr
     elseif f == rem && length(types) == 2 && all(t-> t <: cli.Ints, types)
         expr.args[1] = LazyMethod(li, %, types)

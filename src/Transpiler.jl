@@ -2,12 +2,13 @@ __precompile__(true)
 module Transpiler
 
 using StaticArrays, Compat
-using Sugar, DataStructures
+using Sugar
 
+import Sugar: isintrinsic
 
 include("clike/shared.jl")
 include("clike/opencl/printing.jl")
-
+include("clike/opengl/compilation.jl")
 
 function empty_caches!()
     empty_replace_cache!()

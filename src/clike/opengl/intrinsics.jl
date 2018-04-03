@@ -1,6 +1,6 @@
 module GLIntrinsics
 
-using StaticArrays, Sugar, GeometryTypes
+using StaticArrays, Sugar, GeometryTypes, MacroTools
 
 import ..Transpiler: ints, floats, numbers, Numbers, Floats, int, Ints, uchar
 import ..Transpiler: fixed_array_length, is_ntuple, is_fixedsize_array, GLMethod
@@ -16,11 +16,82 @@ const GLDeviceArray = Union{GLArray, GLTexture}
 const Types = Union{vecs..., numbers..., GLArray, GLTexture}
 const Functions = Union{map(typeof, functions)...}
 
-glsl_sizeof(T) = sizeof(T) * 8
+
+const intrinsic_signatures = Dict{Function, Any}()
+
+macro gl_intrinsic(expr)
+    matched = @capture(
+        expr,
+        (func_(args__) where {T__} = body_) | (func_(args__) = body_)
+    )
+    @assert matched "internal error: intrinsic wasn't matched: $expr"
+    ret_expr = Expr(:block)
+
+    # it's possible to define methods in base as intrinsic.
+    # if they're not in base, we need to define a function stub
+    if !isdefined(Base, func)
+        push!(ret_expr.args, esc(expr))
+    end
+    types = map(args) do arg
+        @assert isa(arg, Expr) && arg.head == :(::) "wrong type declaration"
+        arg.args[end]
+    end
+    tuple_typ = :(Tuple{$(types...)})
+    if T != nothing
+        tuple_typ = :($tuple_typ where {$(T...)})
+    end
+    push!(ret_expr.args, :(intrinsic_signatures[$func] = $tuple_typ))
+    ret_expr
+end
+
+
+@gl_intrinsic imageStore(x::GLArray{T, 1}, i::int, val::NTuple{4, T}) where T = nothing
+@gl_intrinsic imageStore(x::GLArray{T, 2}, i::NTuple{2, int}, val::NTuple{4, T}) where T = nothing
+
+@gl_intrinsic imageLoad(x::GLArray{T, 1}, i::int) where T = ret(NTuple{4, T})
+@gl_intrinsic imageLoad(x::GLArray{T, 2}, i::NTuple{2, int}) where T = ret(NTuple{4, T})
+
+@gl_intrinsic texelFetch(x::GLTexture{T, 1}, i::int, lod::int) where T = ret(NTuple{4, T})
+@gl_intrinsic texelFetch(x::GLTexture{T, 2}, i::NTuple{2, int}, lod::int) where T = ret(NTuple{4, T})
+
+@gl_intrinsic texture(x::GLTexture{T, 1}, i::Float32) where T = ret(NTuple{4, T})
+@gl_intrinsic texture(x::GLTexture{T, 2}, i::Vec2f0) where T = ret(NTuple{4, T})
+@gl_intrinsic texture(x::GLTexture{T, 3}, i::Vec3f0) where T = ret(NTuple{4, T})
+
+@gl_intrinsic imageSize(x::GLArray{T, N}) where {T, N} = ret(NTuple{N, int})
+@gl_intrinsic textureSize(::GLTexture{T, N}) where {T, N} = ret(NTuple{N, int})
+
+
+#=
+Gradient in x direction
+This is sadly a bit hard to implement for a pure CPU versions, since it's pretty much backed into the GPU hardware.
+How it seems to work is, that it takes the values from neighboring registers, which work in parallel on the pixels
+of the triangle, so they actually do hold the neighboring values needed to calculate the gradient.
+=#
+@gl_intrinsic dFdx(value::T) where T = T(0.001) # just default to a small gradient if it's called on the CPU
+@gl_intrinsic dFdy(value::T) where T = T(0.001) # just default to a small gradient if it's called on the CPU
+
+
+@gl_intrinsic EmitVertex() = nothing
+@gl_intrinsic EndPrimitive() = nothing
+
+const gl_GlobalInvocationID = Vec3f0(0, 0, 0)
+const gl_FragCoord = Vec4f0(0, 0, 0, 0)
+const gl_VertexID = 0
+
+end # end GLIntrinsics
+
+using .GLIntrinsics
+using GeometryTypes
+const gli = GLIntrinsics
+import .gli: GLArray, GLDeviceArray, GLTexture
+
+glsl_sizeof(::T) where T = sizeof(T) * 8
 # for now we disallow Float64 and map it to Float32 -> super hack alert!!!!
 glsl_sizeof(::Type{Float64}) = 32
-glsl_length{T <: Number}(::Type{T}) = 1
+glsl_length(::Type{T}) where T <: Number = 1
 glsl_length(T) = length(T)
+
 prescripts = Dict(
     Float32 => "",
     Float64 => "", # ignore float64 for now
@@ -52,120 +123,24 @@ function typename{T <: SMatrix}(io::AbstractGLIO, ::Type{T})
     string(prescripts[eltype(T)], "mat", M == N ? M : string(M, "x", N))
 end
 
-function vecname{T}(io::AbstractGLIO, t::Type{T})
+function Sugar.vecname{T}(io::AbstractGLIO, t::Type{T})
     N = fixed_array_length(T)
     ET = eltype(T)
     return string(prescripts[ET], "vec", N)
 end
 
-imageStore{T}(x::GLArray{T, 1}, i::int, val::NTuple{4, T}) = nothing
-imageStore{T}(x::GLArray{T, 2}, i::NTuple{2, int}, val::NTuple{4, T}) = nothing
 
-imageLoad{T}(x::GLArray{T, 1}, i::int) = ret(NTuple{4, T})
-imageLoad{T}(x::GLArray{T, 2}, i::NTuple{2, int}) = ret(NTuple{4, T})
-
-texelFetch{T}(x::GLTexture{T, 1}, i::int, lod::int) = ret(NTuple{4, T})
-texelFetch{T}(x::GLTexture{T, 2}, i::NTuple{2, int}, lod::int) = ret(NTuple{4, T})
-
-texture{T}(x::GLTexture{T, 1}, i::Float32) = ret(NTuple{4, T})
-texture{T}(x::GLTexture{T, 2}, i::Vec2f0) = ret(NTuple{4, T})
-texture{T}(x::GLTexture{T, 3}, i::Vec3f0) = ret(NTuple{4, T})
-
-imageSize{T, N}(x::GLArray{T, N}) = ret(NTuple{N, int})
-textureSize{T, N}(::GLTexture{T, N}) = ret(NTuple{N, int})
-
-
-"""
-Gradient in x direction
-This is sadly a bit hard to implement for a pure CPU versions, since it's pretty much backed into the GPU hardware.
-How it seems to work is, that it takes the values from neighboring registers, which work in parallel on the pixels
-of the triangle, so they actually do hold the neighboring values needed to calculate the gradient.
-"""
-dFdx{T}(value::T) = T(0.001) # just default to a small gradient if it's called on the CPU
-dFdy{T}(value::T) = T(0.001) # just default to a small gradient if it's called on the CPU
-
-
-EmitVertex() = nothing
-EndPrimitive() = nothing
-
-const gl_GlobalInvocationID = Vec3f0(0, 0, 0)
-const gl_FragCoord = Vec4f0(0, 0, 0, 0)
-
-function glintrinsic{F <: Function, T <: Tuple}(f::F, types::Type{T})
-    glintrinsic(f, Sugar.to_tuple(types))
-end
-function glintrinsic{F <: Function}(f::F, types::Tuple)
-    # we rewrite Ntuples as glsl arrays, so getindex becomes inbuild
-    if f == broadcast
-        BF = types[1]
-        if BF <: cli.Functions && all(T-> T <: Types || is_fixedsize_array(T), types[2:end])
-            return true
-        end
-    end
-    if f == getindex && length(types) == 2 && first(types) <: NTuple && last(types) <: Integer
-        return true
-    end
-    # matmul
-    if f == (*)  && length(types) == 2 && all(T-> T <: StaticArray, types)
-        return true
-    end
-    m = methods(f)
-    isempty(m) && return false
-    sym = first(m).name
-    (F <: cli.Functions && all(T-> T <: Types || is_fixedsize_array(T), types)) || (
-        # if any intrinsic funtion stub matches
-        isdefined(GLIntrinsics, sym) &&
-        Base.binding_module(GLIntrinsics, sym) == GLIntrinsics &&
-        length(methods(f, types)) == 1
-    )
-end
-
-end # end GLIntrinsics
-
-using .GLIntrinsics
-using GeometryTypes
-const gli = GLIntrinsics
-import .gli: glintrinsic, GLArray, GLDeviceArray, GLTexture
 
 import Sugar.isintrinsic
 
-
-function gli.glintrinsic{T}(x::Type{T})
-    T <: gli.Types ||
-    is_fixedsize_array(T) ||
-    T <: Tuple{Numbers} ||
-    (T <: NTuple{1} && is_fixedsize_array(eltype(T))) ||
-    (T <: SMatrix && all(x-> x <= 4, size(T))) ||
-    T <: uchar # uchar in ints makes 0.6 segfault -.-
+function is_native_type(m::GLMethod, T)
+    T <: gli.Types || is_fixedsize_array(m, T) || T <: Tuple{T} where T <: cli.Numbers
 end
-function isintrinsic(x::GLMethod)
-    if isfunction(x)
-        isintrinsic(Sugar.getfunction(x)) ||
-        gli.glintrinsic(x.signature...)
-    else
-        gli.glintrinsic(x.signature)
-    end
+function backend_intrinsic(m::GLMethod, func::ANY, sig_tuple::ANY)
+    haskey(gli.intrinsic_signatures, func) || return false
+    sig = gli.intrinsic_signatures[func]
+    sig_tuple <: sig
 end
-
-# copied from rewriting. TODO share implementation!
-
-# Make constructors inbuild for now. TODO, only make default constructors inbuild
-glintrinsic{T}(f::Type{T}, types::ANY) = true
-
-# homogenous tuples, translated to glsl array
-function glintrinsic{T, I}(
-        f::typeof(getindex), types::Type{Tuple{T, I}}
-    )
-    return is_fixedsize_array(T) && I <: Union{StaticArray, Integer}
-end
-
-function glintrinsic{T <: GLDeviceArray, Val, I <: Integer}(
-        f::typeof(setindex!), types::Type{Tuple{T, Val, I}}
-    )
-    return true
-end
-
-glintrinsic(f::typeof(tuple), types::Tuple) = true
 
 import Base: getindex, setindex!, size
 

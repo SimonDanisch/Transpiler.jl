@@ -6,13 +6,13 @@ const GLMethod = LazyMethod{:GL}
 const GEOMMethod = LazyMethod{:GEOM}
 const GLMethods = Union{GLMethod, GEOMMethod}
 
-@compat abstract type AbstractGLIO <: CIO end
+abstract type AbstractGLIO <: CIO end
 
-immutable GLFunction{Args <: Tuple}
-    program::GLProgram
+struct GLFunction{Args <: Tuple}
+    program
     local_size::NTuple{3, Int}
 end
-type GLIO{T <: IO} <: AbstractGLIO
+mutable struct GLIO{T <: IO} <: AbstractGLIO
     io::T
     method::GLMethods
 end
@@ -29,7 +29,6 @@ include("printing.jl")
 include("rewriting.jl")
 
 
-
 #to_gl_types{T}(::Type{T}) = T
 to_gl_types{T}(::T) = to_gl_types(T)
 to_gl_types{T}(::Type{T}) = T
@@ -37,12 +36,12 @@ to_gl_types{T}(::Type{Type{T}}) = Type{T}
 to_gl_types(::Type{Int64}) = Int32
 to_gl_types(::Type{Float64}) = Float32
 
-function to_gl_types{T <: Texture}(arg::Type{T})
-    return gli.GLTexture{eltype(arg), ndims(arg)}
-end
-function to_gl_types{T <: GLBuffer}(arg::Type{T})
-    return gli.GLArray{eltype(arg), ndims(arg)}
-end
+# function to_gl_types{T <: Texture}(arg::Type{T})
+#     return gli.GLTexture{eltype(arg), ndims(arg)}
+# end
+# function to_gl_types{T <: GLBuffer}(arg::Type{T})
+#     return gli.GLArray{eltype(arg), ndims(arg)}
+# end
 
 function gl_convert{T}(x::T)
     # empty objects are empty and are only usable for dispatch

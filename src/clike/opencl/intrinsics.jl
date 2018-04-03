@@ -113,22 +113,13 @@ function is_native_type(m::CLMethod, T)
     T <: cli.Types || is_fixedsize_array(m, T) || T <: Tuple{T} where T <: cli.Numbers
 end
 
-function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
-    # constructors are intrinsic. TODO more thorow lookup to match actual inbuild constructor
-    isa(func, DataType) && is_native_type(m, func) && return true
-    func == tuple && return true # TODO match against all Base intrinsics?
-    func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
-    func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
-    #TODO better julia/cl intrinsic matching
-    func == Base.select_value && return true
-    # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true
-    # shared intrinsic functions should all work on all native types.
-    # TODO, find exceptions where this isn't true
-    func in functions && all(x-> is_native_type(m, x), Sugar.to_tuple(sig_tuple)) && return true
+function backend_intrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     haskey(cli.intrinsic_signatures, func) || return false
     sig = cli.intrinsic_signatures[func]
     sig_tuple <: sig
 end
+
+
 
 Base.getindex{T}(a::cli.LocalPointer{T}, i::Integer) = cli.ret(T)
 Base.getindex{T}(a::GlobalPointer{T}, i::Integer) = cli.ret(T)
@@ -136,7 +127,7 @@ Base.getindex{T}(a::GlobalPointer{T}, i::Integer) = cli.ret(T)
 Base.setindex!{T}(::cli.LocalPointer{T}, ::T, ::Integer) = nothing
 Base.setindex!{T}(a::GlobalPointer{T}, value::T, i::Integer) = nothing
 function Base.setindex!(a::GlobalPointer{T}, value::T2, i::Integer) where {T, T2}
-    setindex!(a, T(value), i)
+    setindex!(a, convert(T, value), i)
     nothing
 end
 
@@ -163,18 +154,18 @@ function Base.setindex!{T <: Vecs}(a::GlobalPointer{T}, value::T, i::Integer)
 end
 
 
-function supports_indexing(m::LazyMethod, ::Type{T}) where T
+function supports_indexing(m::CLMethod, ::Type{T}) where T
     is_fixedsize_array(T) || T <: DevicePointer
 end
 
-function supports_indices(m::LazyMethod, ::Type{<: GlobalPointer{T}}, index_types) where T
+function supports_indices(m::CLMethod, ::Type{<: GlobalPointer{T}}, index_types) where T
     is_fixedsize_array(m, T) && return false # fixed size arrays are implemented via vstore/load
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supports_indices(m::LazyMethod, ::Type{<: DevicePointer}, index_types)
+function supports_indices(m::CLMethod, ::Type{<: DevicePointer}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
-function supports_indices(m::LazyMethod, ::Type{<: Tuple}, index_types)
+function supports_indices(m::CLMethod, ::Type{<: Tuple}, index_types)
     length(index_types) == 1 && index_types[1] <: Integer
 end
 

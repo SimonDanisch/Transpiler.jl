@@ -17,16 +17,25 @@ import Base: show_call, show_unquoted, show
 import Sugar: ASTIO, LazyMethod, typename, functionname, _typename, show_name
 import Sugar: supports_overloading, show_type, show_function, is_native_type, isintrinsic
 
-@compat abstract type CIO <: ASTIO end
-immutable EmptyCIO <: CIO
+const CLMethod = LazyMethod{:CL}
+
+const GLMethod = LazyMethod{:GL}
+const GEOMMethod = LazyMethod{:GEOM}
+const GLMethods = Union{GLMethod, GEOMMethod}
+const CMethods = Union{CLMethod, GLMethods}
+
+abstract type CIO <: ASTIO end
+
+struct EmptyCIO <: CIO
 end
 
-immutable EmptyStruct
+struct EmptyStruct
     # Emtpy structs are not supported in OpenCL, which is why we emit a struct
     # with one floating point field
     x::Int32
     EmptyStruct() = new()
 end
+
 
 # helper function to fake a return type to type inference for intrinsic function stabs
 @noinline function ret{T}(::Type{T})::T
@@ -61,13 +70,33 @@ end
 const vecs = (_vecs...)
 const Vecs = Union{vecs...}
 
+function isintrinsic(x::CMethods)
+    if isfunction(x)
+        isintrinsic(x, x.signature...)
+    else
+        is_native_type(x, x.signature)
+    end
+end
+
+function isintrinsic(m::CMethods, func::ANY, sig_tuple::ANY)
+    # constructors are intrinsic. TODO more thorow lookup to match actual inbuild constructor
+    isa(func, DataType) && is_native_type(m, func) && return true
+    func == tuple && return true # TODO match against all Base intrinsics?
+    func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
+    func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
+    # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true
+    # shared intrinsic functions should all work on all native types.
+    # TODO, find exceptions where this isn't true
+    func in functions && all(x-> is_native_type(m, x), Sugar.to_tuple(sig_tuple)) && return true
+    backend_intrinsic(m, func, sig_tuple)
+end
 
 ##################################################
 # Intrinsics that don't have a julia counterpart:
 
 pow{T <: Numbers}(a::T, b::T) = a ^ b
-cl_pow{T1, T2}(a::T1, b::T2) = pow(promote(a, b)...)
-cl_pow{T <: Numbers}(a::T, b::T) = pow(a, b)
+gpu_pow{T1, T2}(a::T1, b::T2) = pow(promote(a, b)...)
+gpu_pow{T <: Numbers}(a::T, b::T) = pow(a, b)
 
 """
 smoothstep performs smooth Hermite interpolation between 0 and 1 when edge0 < x < edge1. This is useful in cases where a threshold function with a smooth transition is desired. smoothstep is equivalent to:
@@ -243,7 +272,7 @@ function _typename(io::IO, x)
             str
         end
     else
-        error("Not transpilable: $x")
+        error("Not transpilable: $x with type $(typeof(x))")
     end
     return str
 end
@@ -308,10 +337,16 @@ function Sugar.functionname(io::CIO, method::LazyMethod)
     if Sugar.isintrinsic(method)
         return f_sym # intrinsic operators don't need hygiene!
     end
-    str = if isfunction(method) && !supports_overloading(io)
-        string(f_sym, '_', signature_hash(method.signature[2]))
+    str = if isfunction(method)
+        if !supports_overloading(io)
+            string(f_sym, '_', signature_hash(method.signature[2]))
+        else
+            string(f_sym)
+        end
     elseif istype(method)
         return string(f_sym)
+    else
+        error("Unknown function: $method")
     end
     if isa(io, Sugar.ASTIO)
         symbol_hygiene(io, str)
@@ -336,7 +371,7 @@ function Base.show_unquoted(io::CIO, slot::Slot, ::Int, ::Int)
     show_name(io, slot)
 end
 
-function c_fieldname(m::LazyMethod, T, i::Integer)
+function c_fieldname(m::LazyMethod, T, i)
     str = if isleaftype(T)
         name = if is_fixedsize_array(m, T)
             fixed_size_array_fieldname(m, T, i)
@@ -346,7 +381,7 @@ function c_fieldname(m::LazyMethod, T, i::Integer)
         if isa(name, Integer) # for types without fieldnames (Tuple)
             "field$name"
         else
-            symbol_hygiene(EmptyCIO(), name)
+            symbol_hygiene(CIO(IOBuffer(), m), name)
         end
     else
         error("Found abstract type: $T")
@@ -354,7 +389,7 @@ function c_fieldname(m::LazyMethod, T, i::Integer)
     Symbol(str)
 end
 
-function typed_type_fields(T)
+function typed_type_fields(io, T)
     nf = nfields(T)
     fields = []
     if nf == 0 # structs can't be empty
@@ -364,8 +399,8 @@ function typed_type_fields(T)
     else
         for i in 1:nf
             FT = fieldtype(T, i)
-            tname = typename(EmptyCIO(), FT)
-            fname = c_fieldname(T, i)
+            tname = typename(io, FT)
+            fname = c_fieldname(io.method, T, i)
             push!(fields, :($fname::$tname))
         end
     end
@@ -697,7 +732,7 @@ function show_returntype(io, method)
     end
     return
 end
-function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+function Sugar.getfuncheader!(x::CMethods)
     if !isdefined(x, :funcheader)
         x.funcheader = if Sugar.isfunction(x)
             sprint() do io
@@ -725,7 +760,7 @@ function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
     x.funcheader
 end
 
-function Sugar.getfuncsource(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+function Sugar.getfuncsource(x::CMethods)
     # TODO make this lazy as well?
     sprint() do io
         show_unquoted(CIO(io, x), Sugar.getast!(x), 0, 0)
@@ -733,12 +768,11 @@ function Sugar.getfuncsource(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
 end
 
 
-function Sugar.getfuncargs(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
+function Sugar.getfuncargs(x::CMethods)
     functype = x.signature[1]
     calltypes, slots = Sugar.to_tuple(x.signature[2]), Sugar.getslots!(x)
     n = Sugar.method_nargs(x)
     start = ifelse(Sugar.isclosure(functype), 1, 2)
-    unpacked_pointers = []
     args = map(start:n) do i
         argtype, name = slots[i]
         # Slot types might be less specific, e.g. when the variable is unused it might end up as Any.
@@ -746,18 +780,11 @@ function Sugar.getfuncargs(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
         if !isleaftype(argtype) && length(calltypes) <= i
             argtype = calltypes[i - 1]
         end
-        if Sugar.contains_tracked_type(x, argtype)[1] && haskey(x.cache, :tracked_types)
-            pointers = map(x.cache[:tracked_types][TypedSlot(i, argtype)]) do field
-                ptr_typ = Sugar.get_fields_type(argtype, field[1:end-1])
-                :($(last(field))::$ptr_typ)
-            end
-            append!(unpacked_pointers, pointers)
-        end
         expr = :($(name)::$(argtype))
         expr.typ = argtype
         expr
     end
-    vcat(args, unpacked_pointers)
+    vcat(args)
 end
 
 

@@ -26,7 +26,7 @@ mapsource = """void mapkernel_1(Base123 f, __global float *  a, __global float *
 }"""
 
 @testset "map kernel" begin
-    @test source == mapsource
+    test_source(source, mapsource)
     deps = dependencies!(cl_mapkernel, true)
     deps_test = [
         Int64,
@@ -86,16 +86,7 @@ broadcastsource = """void broadcast_kernel_5(__global float *  A, Base123 f, uin
     return;
 }"""
 
-function test_source(target, result)
-    source_equal = target == result
-    if source_equal
-        @test true
-    else
-        @test false
-        println("source unequal:\ntarget:\n", target)
-        println("result:\n", result)
-    end
-end
+
 @testset "broadcast kernel" begin
     test_source(broadcastsource, source)
 
