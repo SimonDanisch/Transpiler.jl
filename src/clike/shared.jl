@@ -700,7 +700,7 @@ end
 function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
     if !isdefined(x, :funcheader)
         x.funcheader = if Sugar.isfunction(x)
-            sprint() do io
+            prototype = sprint() do io
                 args = Sugar.getfuncargs(x)
                 glio = CIO(io, x)
                 show_returntype(glio, x)
@@ -718,6 +718,9 @@ function Sugar.getfuncheader!(x::Union{LazyMethod{:CL}, LazyMethod{:GL}})
                 end
                 print(glio, ')')
             end
+            # first is the function prototype!
+            header = prototype
+            prototype * ";\n" * header
         else
             ""
         end

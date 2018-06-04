@@ -9,13 +9,24 @@ function mapkernel(f, a, b, c)
     return
 end
 
+function test_source(target, result)
+    source_equal = target == result
+    if source_equal
+        @test true
+    else
+        @test false
+        println("source unequal:\ntarget:\n", target)
+        println("result:\n", result)
+    end
+end
 # empty caches
 Transpiler.empty_caches!()
 
 args = (typeof(+), cli.GlobalPointer{Float32}, cli.GlobalPointer{Float32}, cli.GlobalPointer{Float32})
 cl_mapkernel = CLMethod((mapkernel, args))
 source = Sugar.getsource!(cl_mapkernel)
-mapsource = """void mapkernel_1(Base123 f, __global float *  a, __global float *  b, __global float *  c)
+mapsource = """void mapkernel_1(Base123 f, __global float *  a, __global float *  b, __global float *  c);
+void mapkernel_1(Base123 f, __global float *  a, __global float *  b, __global float *  c)
 {
     uint gid;
     gid = get_global_id(0) + (uint)(1);
@@ -26,7 +37,7 @@ mapsource = """void mapkernel_1(Base123 f, __global float *  a, __global float *
 }"""
 
 @testset "map kernel" begin
-    @test source == mapsource
+    test_source(mapsource, source)
     deps = dependencies!(cl_mapkernel, true)
     deps_test = [
         Int64,
@@ -74,7 +85,8 @@ end
 args = (cli.GlobalPointer{Float32}, typeof(+), Tuple{UInt32}, cli.GlobalPointer{Float32}, Float32)
 cl_mapkernel = CLMethod((broadcast_kernel, args))
 source = getsource!(cl_mapkernel)
-broadcastsource = """void broadcast_kernel_5(__global float *  A, Base123 f, uint sz, __global float *  arg1, float arg2)
+broadcastsource = """void broadcast_kernel_5(__global float *  A, Base123 f, uint sz, __global float *  arg1, float arg2);
+void broadcast_kernel_5(__global float *  A, Base123 f, uint sz, __global float *  arg1, float arg2)
 {
     uint i;
     i = get_global_id(0) + (uint)(1);
@@ -86,16 +98,6 @@ broadcastsource = """void broadcast_kernel_5(__global float *  A, Base123 f, uin
     return;
 }"""
 
-function test_source(target, result)
-    source_equal = target == result
-    if source_equal
-        @test true
-    else
-        @test false
-        println("source unequal:\ntarget:\n", target)
-        println("result:\n", result)
-    end
-end
 @testset "broadcast kernel" begin
     test_source(broadcastsource, source)
 
@@ -131,7 +133,8 @@ end
     decl = CLMethod((fortest, (Float32,)))
     source = Sugar.getsource!(decl)
     #TODO remove xxtempx4, which is unused now...
-    target_source = """float fortest_6(float x)
+    target_source = """float fortest_6(float x);
+    float fortest_6(float x)
     {
         float acc;
         long x2temp2;
@@ -178,6 +181,7 @@ end
     __constant int FUNC_INST_Transpiler1CLIntrinsics12cl_select = 0;
     typedef int Transpiler1CLIntrinsics12cl_select; // empty type emitted as an int
     // (Transpiler.CLIntrinsics.cl_select, Tuple{Float32,Float32,Bool})
+    float cl_select_9(float a, float b, JLBool c);
     float cl_select_9(float a, float b, JLBool c)
     {
         return select(b, a, (uint)(c));
@@ -191,16 +195,19 @@ end
     __constant int FUNC_INST_Base12oftype = 0;
     typedef int Base12oftype; // empty type emitted as an int
     // (oftype, Tuple{Float32,Int64})
+    float oftype_10(float x, long c);
     float oftype_10(float x, long c)
     {
         return (float){c};
     }
     // (zero, Tuple{Float32})
+    float zero_6(float x);
     float zero_6(float x)
     {
         return oftype_10(x, 0);
     }
     // (getindex, Tuple{UniformScaling{Float32},Int64,Int64})
+    float getindex_7(UniformScaling_float J, long i, long j);
     float getindex_7(UniformScaling_float J, long i, long j)
     {
         return cl_select_9(J.λ, zero_6(J.λ), i == j);
@@ -208,7 +215,8 @@ end
     // ########################
     // Main inner function
     // (custom_index_test, (UniformScaling{Float32},))
-    __kernel float custom_index_test_8(UniformScaling_float x)
+    __kernel float custom_index_test_8(UniformScaling_float x);
+    float custom_index_test_8(UniformScaling_float x)
     {
         return getindex_7(x, 1, 1);
     }
@@ -245,11 +253,13 @@ end
     __constant Any TYP_INST_Any = 0;
 
     // (inner, Tuple{Int64})
+    float inner_13(long i);
     float inner_13(long i)
     {
         return (float)(i) * 77.0f;
     }
     // (ntuple, Tuple{#inner,Type{Val{4}}})
+    float4 ntuple_11(x2inner f, Type5Val5466 x2unused2);
     float4 ntuple_11(x2inner f, Type5Val5466 x2unused2)
     {
         return (float4){inner_13(1), inner_13(2), inner_13(3), inner_13(4)};
@@ -257,7 +267,8 @@ end
     // ########################
     // Main inner function
     // (ntuple_test, (Val{4},))
-    __kernel float4 ntuple_test_12(Val_4 x2unused2)
+    __kernel float4 ntuple_test_12(Val_4 x2unused2);
+    float4 ntuple_test_12(Val_4 x2unused2)
     {
         return ntuple_11(FUNC_INST_x2inner, TYP_INST_Type5Val5466);
     }
@@ -280,6 +291,7 @@ end
     __constant int FUNC_INST_Transpiler1CLIntrinsics12cl_select = 0;
     typedef int Transpiler1CLIntrinsics12cl_select; // empty type emitted as an int
     // (Transpiler.CLIntrinsics.cl_select, Tuple{Int64,Int64,Bool})
+    long cl_select_14(long a, long b, JLBool c);
     long cl_select_14(long a, long b, JLBool c)
     {
         return select(b, a, (ulong)(c));
@@ -287,7 +299,8 @@ end
     // ########################
     // Main inner function
     // (testifelse, (Int64, Int64))
-    __kernel long testifelse_15(long a, long b)
+    __kernel long testifelse_15(long a, long b);
+    long testifelse_15(long a, long b)
     {
         return cl_select_14(a, b, a == b);
     }
@@ -329,6 +342,7 @@ end
     __constant Type5Float326 TYP_INST_Type5Float326 = 0;
 
     // (Complex{Float32}, Tuple{Float32,Float32})
+    Complex_float x7Complex_float8_17(float re, float im);
     Complex_float x7Complex_float8_17(float re, float im)
     {
         return (Complex_float){re, im};
@@ -339,6 +353,7 @@ end
     // Symbol
 
     // (real, Tuple{Complex{Float32}})
+    float real_16(Complex_float z);
     float real_16(Complex_float z)
     {
         return z.re;
@@ -347,11 +362,13 @@ end
     __constant int FUNC_INST_Base12imag = 0;
     typedef int Base12imag; // empty type emitted as an int
     // (imag, Tuple{Complex{Float32}})
+    float imag_16(Complex_float z);
     float imag_16(Complex_float z)
     {
         return z.im;
     }
     // (Base.FastMath.mul_fast, Tuple{Float32,Complex{Float32}})
+    Complex_float mul_fast_18(float a, Complex_float y);
     Complex_float mul_fast_18(float a, Complex_float y)
     {
         return x7Complex_float8_17(a * real_16(y), a * imag_16(y));
@@ -360,11 +377,13 @@ end
     __constant int FUNC_INST_Base1FastMath12cis_fast = 0;
     typedef int Base1FastMath12cis_fast; // empty type emitted as an int
     // (Base.FastMath.cis_fast, Tuple{Float32})
+    Complex_float cis_fast_6(float x);
     Complex_float cis_fast_6(float x)
     {
         return x7Complex_float8_17(cos(x), sin(x));
     }
     // (Base.FastMath.exp_fast, Tuple{Complex{Float32}})
+    Complex_float exp_fast_16(Complex_float x);
     Complex_float exp_fast_16(Complex_float x)
     {
         return mul_fast_18(exp(real_16(x)), cis_fast_6(imag_16(x)));
@@ -372,7 +391,8 @@ end
     // ########################
     // Main inner function
     // (testfastmath, (Complex{Float32},))
-    __kernel Complex_float testfastmath_16(Complex_float a)
+    __kernel Complex_float testfastmath_16(Complex_float a);
+    Complex_float testfastmath_16(Complex_float a)
     {
         return exp_fast_16(a);
     }
