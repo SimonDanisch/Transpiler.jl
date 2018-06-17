@@ -119,6 +119,8 @@ function isintrinsic(m::CLMethod, func::ANY, sig_tuple::ANY)
     func == tuple && return true # TODO match against all Base intrinsics?
     func == getfield && sig_tuple <: (Tuple{X, Symbol} where X) && return true
     func == getfield && sig_tuple <: (Tuple{X, Integer} where X <: Tuple) && return true
+    func == muladd && sig_tuple <: (Tuple{T, T, T} where T <: AbstractFloat) && return true
+    Sugar.isintrinsic(func) && return true
     #TODO better julia/cl intrinsic matching
     func == Base.select_value && return true
     # Symbol(func) == Symbol("GPUArrays.LocalMemory") && return true

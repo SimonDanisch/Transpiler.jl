@@ -1,5 +1,5 @@
 extract_val(::Type{Val{X}}) where X = X
-function rewrite_backend_specific{F}(m::CLMethod, f::F, types, expr)
+function rewrite_backend_specific(m::CLMethod, f::F, types, expr) where F
     li = m.parent
     if f == (ifelse) && length(types) == 3 && types[1] == Bool && all(x-> x <: cli.Types || is_fixedsize_array(x), types[2:3])
         _types = (types[2], types[3], types[1])
@@ -16,6 +16,7 @@ function rewrite_backend_specific{F}(m::CLMethod, f::F, types, expr)
         expr.args[1] = LazyMethod(li, %, types)
         return true, expr
     elseif f == muladd && length(types) == 3 && all(t-> t <: cli.Floats, types)
+
         expr.args[1] = LazyMethod(li, fma, types)
         return true, expr
     elseif Symbol(f) == :synchronize_threads
